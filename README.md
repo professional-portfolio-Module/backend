@@ -1,6 +1,6 @@
-# NAITA Backend API
+# Backend API
 
-Node.js + Express backend for the NAITA project.
+Node.js + Express backend API service.
 
 ## Tech Stack
 

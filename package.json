@@ -10,7 +10,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "NAITA Backend API",
+  "description": "Backend API",
   "dependencies": {
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
