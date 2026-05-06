@@ -11,44 +11,35 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  # ---- Job 1: Lint & Test ----
   test:
     name: Lint & Test
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: "npm"
-
       - name: Install dependencies
         run: npm ci
-
       - name: Run tests
         run: npm test || true
 
-  # ---- Job 2: Build & Push to Docker Hub ----
   build:
     name: Build & Push Image
     runs-on: ubuntu-latest
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
-
       - name: Build and Push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -58,39 +49,43 @@ jobs:
             ${{ env.DOCKER_IMAGE }}:latest
             ${{ env.DOCKER_IMAGE }}:${{ github.sha }}
 
-  # ---- Job 3: Deploy to DigitalOcean ----
   deploy:
     name: Deploy to DigitalOcean
     runs-on: ubuntu-latest
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Copy deployment files to Droplet
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          source: "docker-compose.yml,nginx/"
+          target: "/home/${{ secrets.DROPLET_USERNAME }}/"
+
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.DROPLET_HOST }}
           username: ${{ secrets.DROPLET_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
           script: |
+            cd /home/${{ secrets.DROPLET_USERNAME }}/
+            
             # Login to Docker Hub
             docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} -p ${{ secrets.DOCKER_HUB_TOKEN }}
 
-            # Pull the latest image
-            docker pull ${{ env.DOCKER_IMAGE }}:latest
+            # Pull latest images and restart services
+            export DOCKER_IMAGE=${{ env.DOCKER_IMAGE }}
+            docker compose pull
+            docker compose up -d --remove-orphans
 
-            # Stop and remove existing container (if it exists)
-            docker stop app-backend || true
-            docker rm app-backend || true
-
-            # Run the new container
-            # Note: We use -d for detached mode and -p to map the port
-            docker run -d \
-              --name app-backend \
-              --restart unless-stopped \
-              -p 3001:3001 \
-              --env-file /home/.env \
-              ${{ env.DOCKER_IMAGE }}:latest
-
-            # Cleanup unused images
+            # Cleanup
             docker image prune -f
