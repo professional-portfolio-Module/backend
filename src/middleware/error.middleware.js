@@ -1,27 +1,35 @@
-/**
- * Handle 404 – route not found
- */
-const notFoundHandler = (req, res, next) => {
-  const error = new Error(`Not Found - ${req.originalUrl}`);
-  error.statusCode = 404;
-  next(error);
-};
+const logger = require("../config/logger");
+const ApiError = require("../utils/ApiError");
 
 /**
- * Global error handler
+ * Global error handler that uses the professional logger
  */
 const errorHandler = (err, req, res, _next) => {
-  const statusCode = err.statusCode || 500;
-  const message = err.message || "Internal Server Error";
+  let { statusCode, message } = err;
 
-  console.error(`❌ [${statusCode}] ${message}`);
+  if (!err.isOperational) {
+    statusCode = 500;
+    message = "Internal Server Error";
+  }
 
-  res.status(statusCode).json({
+  res.locals.errorMessage = err.message;
+
+  const response = {
     success: false,
-    status: statusCode,
+    status: statusCode || 500,
     message,
     ...(process.env.NODE_ENV === "development" && { stack: err.stack }),
-  });
+  };
+
+  if (process.env.NODE_ENV === "development") {
+    logger.error(err);
+  }
+
+  res.status(statusCode || 500).send(response);
 };
 
-module.exports = { notFoundHandler, errorHandler };
+const notFoundHandler = (req, res, next) => {
+  next(new ApiError(404, `Not Found - ${req.originalUrl}`));
+};
+
+module.exports = { errorHandler, notFoundHandler };
