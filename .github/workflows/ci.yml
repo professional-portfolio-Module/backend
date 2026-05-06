@@ -3,8 +3,22 @@ name: CI/CD Pipeline
 on:
   push:
     branches: [main]
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'Dockerfile'
+      - 'docker-compose.yml'
+      - 'nginx/**'
+      - '.github/workflows/**'
   pull_request:
     branches: [main]
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'Dockerfile'
+
 
 env:
   DOCKER_IMAGE: ${{ secrets.DOCKER_HUB_USERNAME }}/professional_portfolio
