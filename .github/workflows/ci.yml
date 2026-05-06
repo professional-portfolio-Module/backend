@@ -72,7 +72,6 @@ jobs:
           host: ${{ secrets.DROPLET_HOST }}
           username: ${{ secrets.DROPLET_USERNAME }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          passphrase: ${{ secrets.SSH_PASSPHRASE }}
           script: |
             # Login to Docker Hub
             docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} -p ${{ secrets.DOCKER_HUB_TOKEN }}
@@ -90,7 +89,7 @@ jobs:
               --name app-backend \
               --restart unless-stopped \
               -p 3001:3001 \
-              --env-file /home/${{ secrets.DROPLET_USERNAME }}/.env \
+              --env-file /home/.env \
               ${{ env.DOCKER_IMAGE }}:latest
 
             # Cleanup unused images
