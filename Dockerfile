@@ -1,4 +1,15 @@
-# ---- Stage 1: Install dependencies ----
+# ---- Stage 1: Install all dependencies & Build ----
+FROM node:20-alpine AS build
+
+WORKDIR /app
+
+COPY package.json package-lock.json tsconfig.json ./
+RUN npm ci
+
+COPY src ./src
+RUN npm run build
+
+# ---- Stage 2: Install production dependencies ----
 FROM node:20-alpine AS deps
 
 WORKDIR /app
@@ -6,7 +17,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
-# ---- Stage 2: Production image ----
+# ---- Stage 3: Final Production image ----
 FROM node:20-alpine AS production
 
 WORKDIR /app
@@ -14,12 +25,12 @@ WORKDIR /app
 # Create non-root user for security
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
-# Copy only production dependencies from deps stage
+# Copy only production dependencies
 COPY --from=deps /app/node_modules ./node_modules
 
-# Copy application source
+# Copy compiled code from build stage
+COPY --from=build /app/dist ./dist
 COPY package.json ./
-COPY src ./src
 
 # Switch to non-root user
 USER appuser
@@ -31,5 +42,5 @@ EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3001/api/health || exit 1
 
-# Start the application
-CMD ["node", "src/server.js"]
+# Start the application from the compiled JS in dist/
+CMD ["node", "dist/server.js"]

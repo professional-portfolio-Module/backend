@@ -1,9 +1,8 @@
-const app = require("./app");
-const config = require("./config/config");
-const connectDB = require("./config/db");
-const { connectPostgres } = require("./config/postgres");
-
-const logger = require("./config/logger");
+import app from './app.js';
+import config from './config/config.js';
+import connectDB from './config/db.js';
+import { connectPostgres } from './config/postgres.js';
+import logger from './config/logger.js';
 
 const PORT = config.PORT;
 
@@ -19,10 +18,7 @@ const PORT = config.PORT;
       logger.info(`🔗 http://localhost:${PORT}`);
     });
   } catch (error) {
-    logger.error("Failed to start server:", error);
+    logger.error('Failed to start server:', error);
     process.exit(1);
   }
 })();
-
-
-

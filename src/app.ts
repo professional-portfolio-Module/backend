@@ -1,15 +1,15 @@
-const express = require("express");
-const cors = require("cors");
-const morgan = require("morgan");
-const config = require("./config/config");
+import express, { Request, Response } from 'express';
+import cors from 'cors';
+import morgan from 'morgan';
+import config from './config/config.js';
 
 // Import routes
-const indexRoutes = require("./routes/index.routes");
+import indexRoutes from './routes/index.routes.js';
 
 // Import middleware
-const { errorHandler, notFoundHandler } = require("./middleware/error.middleware");
+import { errorHandler, notFoundHandler } from './middleware/error.middleware.js';
 
-const logger = require("./config/logger");
+import logger from './config/logger.js';
 
 const app = express();
 
@@ -30,17 +30,16 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // HTTP request logging
-if (config.NODE_ENV !== "test") {
-  app.use(morgan("dev", {
+if (config.NODE_ENV !== 'test') {
+  app.use(morgan('dev', {
     stream: { write: (message) => logger.info(message.trim()) }
   }));
 }
 
-
 // ---------------------
 // Routes
 // ---------------------
-app.use("/api", indexRoutes);
+app.use('/api', indexRoutes);
 
 // ---------------------
 // Error Handling
@@ -48,4 +47,4 @@ app.use("/api", indexRoutes);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-module.exports = app;
+export default app;

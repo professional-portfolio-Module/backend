@@ -1,12 +1,11 @@
-/**
- * Custom API Error Wrapper
- */
 class ApiError extends Error {
-  constructor(statusCode, message, isOperational = true, stack = "") {
+  statusCode: number;
+  isOperational: boolean;
+
+  constructor(statusCode: number, message: string, isOperational = true, stack = '') {
     super(message);
     this.statusCode = statusCode;
     this.isOperational = isOperational;
-    this.success = false;
     if (stack) {
       this.stack = stack;
     } else {
@@ -15,4 +14,4 @@ class ApiError extends Error {
   }
 }
 
-module.exports = ApiError;
+export default ApiError;

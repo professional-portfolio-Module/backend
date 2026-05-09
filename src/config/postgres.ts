@@ -1,22 +1,23 @@
-const { Pool } = require("pg");
-const config = require("./config");
-const logger = require("./logger");
+import pg from 'pg';
+import config from './config.js';
+import logger from './logger.js';
+
+const { Pool } = pg;
 
 const pool = new Pool({
   connectionString: config.POSTGRES_URI,
   ssl: { rejectUnauthorized: false },
 });
 
-const connectPostgres = async () => {
+const connectPostgres = async (): Promise<void> => {
   try {
     const client = await pool.connect();
-    logger.info(`✅ PostgreSQL connected: ${client.database}`);
+    logger.info('✅ PostgreSQL connected');
     client.release();
-  } catch (error) {
+  } catch (error: any) {
     logger.error(`❌ PostgreSQL connection error: ${error.message}`);
     process.exit(1);
   }
 };
 
-
-module.exports = { pool, connectPostgres };
+export { pool, connectPostgres };
