@@ -23,7 +23,7 @@ const config: Config = {
   CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:5173',
   DB_URI: process.env.DB_URI,
   POSTGRES_URI: process.env.POSTGRES_URI,
-  NATS_URI: process.env.NATS_URI || 'nats://localhost:4222',
+  NATS_URI: process.env.NATS_URI || (process.env.NODE_ENV === 'production' ? 'nats://nats:4222' : 'nats://localhost:4222'),
 };
 
 export default config;
