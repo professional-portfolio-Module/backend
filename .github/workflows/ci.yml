@@ -101,10 +101,15 @@ jobs:
             # Login to Docker Hub
             docker login -u ${{ secrets.DOCKER_HUB_USERNAME }} -p ${{ secrets.DOCKER_HUB_TOKEN }}
 
-            # Pull latest images and restart services
+            # Pull latest images
             export DOCKER_IMAGE=${{ env.DOCKER_IMAGE }}
             docker compose pull
-            docker compose up -d --remove-orphans --force-recreate --wait
+
+            # Smart rolling update (keeps unmodified services online, respects start-first rollbacks)
+            docker compose up -d --remove-orphans --wait
+
+            # Hot-Reload Nginx configuration changes instantly with zero downtime
+            docker compose exec -T nginx nginx -s reload
 
             # Cleanup
             docker image prune -f
