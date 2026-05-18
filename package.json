@@ -18,11 +18,13 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "joi": "^18.2.1",
-    "kafkajs": "^2.2.4",
     "mongoose": "^9.6.1",
     "morgan": "^1.10.1",
+    "nats": "^2.29.3",
+    "nodemailer": "^8.0.7",
     "pg": "^8.20.0",
     "qrcode": "^1.5.4",
+    "twilio": "^6.0.2",
     "winston": "^3.19.0"
   },
   "devDependencies": {
@@ -30,6 +32,7 @@
     "@types/express": "^5.0.6",
     "@types/morgan": "^1.9.10",
     "@types/node": "^25.6.2",
+    "@types/nodemailer": "^8.0.0",
     "@types/pg": "^8.20.0",
     "@types/qrcode": "^1.5.6",
     "@types/winston": "^2.4.4",
