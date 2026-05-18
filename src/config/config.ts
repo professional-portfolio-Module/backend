@@ -14,6 +14,8 @@ interface Config {
   CORS_ORIGIN: string;
   DB_URI?: string;
   POSTGRES_URI?: string;
+  KAFKA_CLIENT_ID: string;
+  KAFKA_BROKERS: string[];
 }
 
 const config: Config = {
@@ -22,6 +24,8 @@ const config: Config = {
   CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:5173',
   DB_URI: process.env.DB_URI,
   POSTGRES_URI: process.env.POSTGRES_URI,
+  KAFKA_CLIENT_ID: process.env.KAFKA_CLIENT_ID || 'backend',
+  KAFKA_BROKERS: (process.env.KAFKA_BROKERS || 'localhost:9092').split(','),
 };
 
 export default config;
