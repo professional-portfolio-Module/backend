@@ -95,6 +95,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           passphrase: ${{ secrets.SSH_PASSPHRASE }}
           script: |
+            set -e
             cd /home/${{ secrets.DROPLET_USERNAME }}/
             
             # Login to Docker Hub
@@ -103,7 +104,7 @@ jobs:
             # Pull latest images and restart services
             export DOCKER_IMAGE=${{ env.DOCKER_IMAGE }}
             docker compose pull
-            docker compose up -d --remove-orphans
+            docker compose up -d --remove-orphans --wait
 
             # Cleanup
             docker image prune -f
