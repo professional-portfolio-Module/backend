@@ -27,6 +27,7 @@ services:
   kafka:
     image: apache/kafka:latest
     container_name: app-kafka
+    hostname: kafka
     ports:
       - "9092:9092"
     environment:
@@ -44,9 +45,9 @@ services:
     healthcheck:
       test: ["CMD", "/opt/kafka/bin/kafka-broker-api-versions.sh", "--bootstrap-server", "localhost:9092"]
       interval: 10s
-      timeout: 5s
+      timeout: 10s
       retries: 5
-      start_period: 15s
+      start_period: 30s
 
 
   nginx:
