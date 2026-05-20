@@ -5,6 +5,8 @@ import notificationRoutes from './notification.routes.js';
 import categoryRoutes from './category.routes.js';
 import equipmentRoutes from './equipment.routes.js';
 import hotelRoutes from './hotel.routes.js';
+import userRoutes from './user.routes.js';
+import roleRoutes from './role.routes.js';
 
 const router = express.Router();
 
@@ -32,6 +34,14 @@ const defaultRoutes = [
   {
     path: '/hotels',
     route: hotelRoutes,
+  },
+  {
+    path: '/users',
+    route: userRoutes,
+  },
+  {
+    path: '/roles',
+    route: roleRoutes,
   },
 ];
 
