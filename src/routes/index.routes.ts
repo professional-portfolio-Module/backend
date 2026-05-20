@@ -4,6 +4,7 @@ import qrRoutes from './qr.routes.js';
 import notificationRoutes from './notification.routes.js';
 import categoryRoutes from './category.routes.js';
 import equipmentRoutes from './equipment.routes.js';
+import hotelRoutes from './hotel.routes.js';
 
 const router = express.Router();
 
@@ -27,6 +28,10 @@ const defaultRoutes = [
   {
     path: '/equipment',
     route: equipmentRoutes,
+  },
+  {
+    path: '/hotels',
+    route: hotelRoutes,
   },
 ];
 
