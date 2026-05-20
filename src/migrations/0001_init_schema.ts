@@ -4,25 +4,16 @@ export const up = `
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- 1. TENANTS (GLOBAL)
-CREATE TABLE IF NOT EXISTS tenants (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name VARCHAR(255) NOT NULL,
-    country VARCHAR(100),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
--- 2. HOTELS (Linked to Tenant)
+-- 1. HOTELS
 CREATE TABLE IF NOT EXISTS hotels (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     country VARCHAR(100),
     city VARCHAR(100),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- 3. USERS (Hotel-Scoped)
+-- 2. USERS (Hotel-Scoped)
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     hotel_id UUID NOT NULL REFERENCES hotels(id) ON DELETE CASCADE,
@@ -34,35 +25,36 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- 4. EQUIPMENT TYPES (Hotel Level)
-CREATE TABLE IF NOT EXISTS equipment_types (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    hotel_id UUID NOT NULL REFERENCES hotels(id) ON DELETE CASCADE,
+-- 3. EQUIPMENT CATEGORIES
+CREATE TABLE IF NOT EXISTS equipment_categories (
+    id SERIAL PRIMARY KEY,
+    code VARCHAR(5) NOT NULL UNIQUE,
     name VARCHAR(100) NOT NULL,
     description TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- 5. EQUIPMENT
+-- 4. EQUIPMENT
 CREATE TABLE IF NOT EXISTS equipment (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id SERIAL PRIMARY KEY,
     hotel_id UUID NOT NULL REFERENCES hotels(id) ON DELETE CASCADE,
-    type_id UUID NOT NULL REFERENCES equipment_types(id),
-    name VARCHAR(255) NOT NULL,
-    location TEXT,
-    qr_code TEXT UNIQUE,
-    install_date DATE,
-    last_maintenance_date DATE,
-    maintenance_interval_days INT,
-    status VARCHAR(50),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    equipment_no VARCHAR(20) NOT NULL UNIQUE,
+    category_id INT NOT NULL REFERENCES equipment_categories(id) ON DELETE CASCADE,
+    description VARCHAR(255) NOT NULL,
+    location VARCHAR(255),
+    status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'retired')),
+    installation_date DATE,
+    warranty_expiry DATE,
+    notes TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- 6. MAINTENANCE SCHEDULES (Recurring Plans)
+-- 5. MAINTENANCE SCHEDULES (Recurring Plans)
 CREATE TABLE IF NOT EXISTS maintenance_schedules (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     hotel_id UUID NOT NULL REFERENCES hotels(id) ON DELETE CASCADE,
-    equipment_id UUID NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+    equipment_id INT NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
     description TEXT NOT NULL,
     frequency VARCHAR(16) CHECK (frequency IN ('daily','weekly','monthly','yearly')),
     interval INT NOT NULL DEFAULT 1 CHECK (interval > 0),
@@ -79,11 +71,11 @@ CREATE TABLE IF NOT EXISTS maintenance_schedules (
 CREATE INDEX IF NOT EXISTS idx_sched_next_run ON maintenance_schedules(next_run_at);
 CREATE INDEX IF NOT EXISTS idx_sched_active_next ON maintenance_schedules(is_active, next_run_at);
 
--- 7. MAINTENANCE TASKS
+-- 6. MAINTENANCE TASKS
 CREATE TABLE IF NOT EXISTS maintenance_tasks (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     hotel_id UUID NOT NULL REFERENCES hotels(id) ON DELETE CASCADE,
-    equipment_id UUID NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+    equipment_id INT NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
     schedule_id UUID REFERENCES maintenance_schedules(id) ON DELETE SET NULL,
     assigned_to UUID REFERENCES users(id),
     assigned_by UUID REFERENCES users(id),
@@ -107,7 +99,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_due ON maintenance_tasks(due_date);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON maintenance_tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_assigned ON maintenance_tasks(assigned_to);
 
--- 8. TASK UPDATES (Progress Notes)
+-- 7. TASK UPDATES (Progress Notes)
 CREATE TABLE IF NOT EXISTS task_updates (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     task_id UUID NOT NULL REFERENCES maintenance_tasks(id) ON DELETE CASCADE,
@@ -117,7 +109,7 @@ CREATE TABLE IF NOT EXISTS task_updates (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- 9. TASK EVIDENCE (Photos, Geolocation)
+-- 8. TASK EVIDENCE (Photos, Geolocation)
 CREATE TABLE IF NOT EXISTS task_evidence (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     task_id UUID NOT NULL REFERENCES maintenance_tasks(id) ON DELETE CASCADE,
@@ -127,7 +119,7 @@ CREATE TABLE IF NOT EXISTS task_evidence (
     captured_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- 10. TASK LOGS (Audit Events)
+-- 9. TASK LOGS (Audit Events)
 CREATE TABLE IF NOT EXISTS task_logs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     task_id UUID NOT NULL REFERENCES maintenance_tasks(id) ON DELETE CASCADE,
