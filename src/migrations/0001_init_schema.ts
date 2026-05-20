@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 -- 3. EQUIPMENT CATEGORIES
 CREATE TABLE IF NOT EXISTS equipment_categories (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     code VARCHAR(5) NOT NULL UNIQUE,
     name VARCHAR(100) NOT NULL,
     description TEXT,
@@ -36,10 +36,10 @@ CREATE TABLE IF NOT EXISTS equipment_categories (
 
 -- 4. EQUIPMENT
 CREATE TABLE IF NOT EXISTS equipment (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     hotel_id UUID NOT NULL REFERENCES hotels(id) ON DELETE CASCADE,
     equipment_no VARCHAR(20) NOT NULL UNIQUE,
-    category_id INT NOT NULL REFERENCES equipment_categories(id) ON DELETE CASCADE,
+    category_id UUID NOT NULL REFERENCES equipment_categories(id) ON DELETE CASCADE,
     description VARCHAR(255) NOT NULL,
     location VARCHAR(255),
     status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'retired')),
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS equipment (
 CREATE TABLE IF NOT EXISTS maintenance_schedules (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     hotel_id UUID NOT NULL REFERENCES hotels(id) ON DELETE CASCADE,
-    equipment_id INT NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+    equipment_id UUID NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
     description TEXT NOT NULL,
     frequency VARCHAR(16) CHECK (frequency IN ('daily','weekly','monthly','yearly')),
     interval INT NOT NULL DEFAULT 1 CHECK (interval > 0),
@@ -75,7 +75,7 @@ CREATE INDEX IF NOT EXISTS idx_sched_active_next ON maintenance_schedules(is_act
 CREATE TABLE IF NOT EXISTS maintenance_tasks (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     hotel_id UUID NOT NULL REFERENCES hotels(id) ON DELETE CASCADE,
-    equipment_id INT NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+    equipment_id UUID NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
     schedule_id UUID REFERENCES maintenance_schedules(id) ON DELETE SET NULL,
     assigned_to UUID REFERENCES users(id),
     assigned_by UUID REFERENCES users(id),
