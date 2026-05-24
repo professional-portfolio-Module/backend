@@ -7,13 +7,13 @@ import { redisService } from '../services/redisService.js';
 import { createNotificationHelper } from './notification.controller.js';
 
 export const getEquipment = catchAsync(async (req: Request, res: Response) => {
-  const { search, category_id, status, page = 1, limit = 10 } = req.query;
+  const { search, category_id, status, page = 1, limit = 10, hotel_id } = req.query;
 
   const pageVal = Math.max(1, parseInt(page as string, 10) || 1);
   const limitVal = Math.max(1, Math.min(100, parseInt(limit as string, 10) || 10));
   const offset = (pageVal - 1) * limitVal;
 
-  const cacheKey = `equipment:list:search=${search || ''}:category_id=${category_id || ''}:status=${status || ''}:page=${pageVal}:limit=${limitVal}`;
+  const cacheKey = `equipment:list:search=${search || ''}:category_id=${category_id || ''}:status=${status || ''}:hotel_id=${hotel_id || ''}:page=${pageVal}:limit=${limitVal}`;
   const cachedData = await redisService.get(cacheKey);
   if (cachedData) {
     return res.status(200).json(
@@ -42,6 +42,11 @@ export const getEquipment = catchAsync(async (req: Request, res: Response) => {
   if (status) {
     query += ` AND e.status = $${paramIndex++}`;
     params.push(status);
+  }
+
+  if (hotel_id) {
+    query += ` AND e.hotel_id = $${paramIndex++}`;
+    params.push(hotel_id);
   }
 
   if (search) {
