@@ -5,13 +5,13 @@ import ApiError from '../utils/ApiError.js';
 import catchAsync from '../utils/catchAsync.js';
 
 export const getCategories = catchAsync(async (req: Request, res: Response) => {
-  const result = await pool.query('SELECT id, code, name, description, created_at FROM categories ORDER BY name ASC');
+  const result = await pool.query('SELECT id, code, name, description, created_at FROM categories WHERE is_active = true ORDER BY name ASC');
   res.status(200).json(new ApiResponse(200, result.rows, 'Categories fetched successfully'));
 });
 
 export const getCategoryById = catchAsync(async (req: Request, res: Response) => {
   const { id } = req.params;
-  const result = await pool.query('SELECT id, code, name, description, created_at FROM categories WHERE id = $1', [id]);
+  const result = await pool.query('SELECT id, code, name, description, created_at FROM categories WHERE id = $1 AND is_active = true', [id]);
   if (result.rows.length === 0) {
     throw new ApiError(404, 'Category not found');
   }
@@ -30,8 +30,8 @@ export const createCategory = catchAsync(async (req: Request, res: Response) => 
     throw new ApiError(400, 'Category code must be at most 5 characters');
   }
 
-  // Check if code already exists
-  const existing = await pool.query('SELECT id FROM categories WHERE code = $1', [normalizedCode]);
+  // Check if code already exists and is active
+  const existing = await pool.query('SELECT id FROM categories WHERE code = $1 AND is_active = true', [normalizedCode]);
   if (existing.rows.length > 0) {
     throw new ApiError(400, `Category code '${normalizedCode}' already exists`);
   }
@@ -48,8 +48,8 @@ export const updateCategory = catchAsync(async (req: Request, res: Response) => 
   const { id } = req.params;
   const { name, description } = req.body;
 
-  // Fetch the category to check if it exists
-  const existing = await pool.query('SELECT id FROM categories WHERE id = $1', [id]);
+  // Fetch the category to check if it exists and is active
+  const existing = await pool.query('SELECT id FROM categories WHERE id = $1 AND is_active = true', [id]);
   if (existing.rows.length === 0) {
     throw new ApiError(404, 'Category not found');
   }
@@ -80,10 +80,25 @@ export const updateCategory = catchAsync(async (req: Request, res: Response) => 
 
   // Remove trailing comma
   query = query.slice(0, -1);
-  query += ` WHERE id = $${paramIndex} RETURNING id, code, name, description, created_at`;
+  query += ` WHERE id = $${paramIndex} AND is_active = true RETURNING id, code, name, description, created_at`;
   params.push(id);
 
   const result = await pool.query(query, params);
 
   res.status(200).json(new ApiResponse(200, result.rows[0], 'Category updated successfully'));
+});
+
+export const deleteCategory = catchAsync(async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  // Check if category exists and is active
+  const existing = await pool.query('SELECT id FROM categories WHERE id = $1 AND is_active = true', [id]);
+  if (existing.rows.length === 0) {
+    throw new ApiError(404, 'Category not found');
+  }
+
+  // Soft delete category
+  await pool.query('UPDATE categories SET is_active = false WHERE id = $1', [id]);
+
+  res.status(200).json(new ApiResponse(200, null, 'Category soft deleted successfully'));
 });

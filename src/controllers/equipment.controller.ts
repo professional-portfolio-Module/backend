@@ -360,3 +360,22 @@ export const updateEquipment = catchAsync(async (req: Request, res: Response) =>
 
   res.status(200).json(new ApiResponse(200, joinedResult.rows[0], 'Equipment item updated successfully'));
 });
+
+export const deleteEquipment = catchAsync(async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  // Check if asset exists
+  const existing = await pool.query('SELECT id FROM assets WHERE id = $1', [id]);
+  if (existing.rows.length === 0) {
+    throw new ApiError(404, 'Equipment item not found');
+  }
+
+  // Soft delete asset by setting status to 'retired'
+  await pool.query("UPDATE assets SET status = 'retired', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [id]);
+
+  // Invalidate caches
+  await redisService.delPattern('equipment:list:*');
+  await redisService.del(`equipment:detail:${id}`);
+
+  res.status(200).json(new ApiResponse(200, null, 'Equipment item soft deleted successfully'));
+});
