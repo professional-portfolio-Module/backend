@@ -7,6 +7,7 @@ import equipmentRoutes from './equipment.routes.js';
 import hotelRoutes from './hotel.routes.js';
 import userRoutes from './user.routes.js';
 import roleRoutes from './role.routes.js';
+import messageRoutes from './message.routes.js';
 
 const router = express.Router();
 
@@ -42,6 +43,10 @@ const defaultRoutes = [
   {
     path: '/roles',
     route: roleRoutes,
+  },
+  {
+    path: '/messages',
+    route: messageRoutes,
   },
 ];
 
