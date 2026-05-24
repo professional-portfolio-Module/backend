@@ -42,7 +42,7 @@ export const generateQR = catchAsync(async (req: Request, res: Response) => {
   const machineId = req.params.machineId as string;
 
   if (!machineId) {
-    throw new ApiError(400, 'Machine ID is required');
+    throw new ApiError(400, 'Asset Card No is required');
   }
 
   // Dynamically determine the host (supports both localhost and DigitalOcean)
@@ -52,7 +52,7 @@ export const generateQR = catchAsync(async (req: Request, res: Response) => {
   // The URL encoded in the physical QR code points to our scan redirect endpoint
   const redirectScanUrl = `${protocol}://${host}/api/qr/scan/${encodeURIComponent(machineId)}`;
 
-  logger.info(`Generating QR code for machine: ${machineId} (Scan URL: ${redirectScanUrl})`);
+  logger.info(`Generating QR code for asset: ${machineId} (Scan URL: ${redirectScanUrl})`);
 
   try {
     // Generate the QR code as a PNG buffer
@@ -69,8 +69,8 @@ export const generateQR = catchAsync(async (req: Request, res: Response) => {
     res.setHeader('Content-Type', 'image/png');
     res.send(qrBuffer);
   } catch (error) {
-    logger.error(`Error generating QR code for ${machineId}:`, error);
-    throw new ApiError(500, 'Failed to generate QR code image');
+    logger.error(`Error generating QR code for asset ${machineId}:`, error);
+    throw new ApiError(500, 'Failed to generate QR code image for asset');
   }
 });
 
@@ -78,18 +78,18 @@ export const scanRedirect = catchAsync(async (req: Request, res: Response) => {
   const machineId = req.params.machineId as string;
 
   if (!machineId) {
-    throw new ApiError(400, 'Machine ID is required');
+    throw new ApiError(400, 'Asset Card No is required');
   }
 
-  logger.info(`QR code scanned for machine ID: ${machineId}`);
+  logger.info(`QR code scanned for asset Card No: ${machineId}`);
 
   const redirects = readRedirects();
   const targetUrl = redirects[machineId];
 
   if (!targetUrl) {
-    logger.warn(`Scan for unregistered or unconfigured machine: ${machineId}`);
+    logger.warn(`Scan for unregistered or unconfigured asset: ${machineId}`);
     
-    // Return a friendly HTML page showing that the machine QR exists but has not been configured
+    // Return a friendly HTML page showing that the asset QR exists but has not been configured
     res.setHeader('Content-Type', 'text/html');
     return res.status(404).send(`
       <!DOCTYPE html>
@@ -97,7 +97,7 @@ export const scanRedirect = catchAsync(async (req: Request, res: Response) => {
       <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Machine QR Code</title>
+        <title>Asset QR Code</title>
         <style>
           body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -152,10 +152,10 @@ export const scanRedirect = catchAsync(async (req: Request, res: Response) => {
       </head>
       <body>
         <div class="card">
-          <h1>⚠️ Machine Not Configured</h1>
-          <p>This physical QR sticker is successfully linked to this server, but no active target destination has been configured for this Machine ID yet.</p>
+          <h1>⚠️ Asset Not Configured</h1>
+          <p>This physical QR sticker is successfully linked to this server, but no active target destination has been configured for this Asset Card No yet.</p>
           <div class="code">${escapeHtml(machineId)}</div>
-          <p>Please use the <strong>/api/qr/update</strong> endpoint to configure a redirect target URL for this machine.</p>
+          <p>Please use the <strong>/api/qr/update</strong> endpoint to configure a redirect target URL for this asset.</p>
           <div class="footer">NAITA Dynamic QR Redirect System</div>
         </div>
       </body>
@@ -163,7 +163,7 @@ export const scanRedirect = catchAsync(async (req: Request, res: Response) => {
     `);
   }
 
-  logger.info(`Redirecting scan for machine '${machineId}' to: ${targetUrl}`);
+  logger.info(`Redirecting scan for asset '${machineId}' to: ${targetUrl}`);
   return res.redirect(targetUrl);
 });
 
@@ -171,7 +171,7 @@ export const updateRedirect = catchAsync(async (req: Request, res: Response) => 
   const { machineId, targetUrl } = req.body;
 
   if (!machineId || !targetUrl) {
-    throw new ApiError(400, 'Both machineId and targetUrl are required');
+    throw new ApiError(400, 'Both machineId (Asset Card No) and targetUrl are required');
   }
 
   // Validate URL format basic check
@@ -185,7 +185,7 @@ export const updateRedirect = catchAsync(async (req: Request, res: Response) => 
   redirects[machineId] = targetUrl;
   writeRedirects(redirects);
 
-  logger.info(`Updated redirect mapping: '${machineId}' -> '${targetUrl}'`);
+  logger.info(`Updated redirect mapping for asset: '${machineId}' -> '${targetUrl}'`);
 
   res.send(
     new ApiResponse(200, {
@@ -194,6 +194,25 @@ export const updateRedirect = catchAsync(async (req: Request, res: Response) => 
     }, 'Redirect configuration updated successfully')
   );
 });
+
+export const getTarget = catchAsync(async (req: Request, res: Response) => {
+  const machineId = req.params.machineId as string;
+
+  if (!machineId) {
+    throw new ApiError(400, 'Asset Card No is required');
+  }
+
+  const redirects = readRedirects();
+  const targetUrl = redirects[machineId] || '';
+
+  res.send(
+    new ApiResponse(200, {
+      machineId,
+      targetUrl,
+    }, 'Redirect target retrieved successfully')
+  );
+});
+
 
 function escapeHtml(text: string): string {
   return text

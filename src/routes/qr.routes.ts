@@ -1,10 +1,13 @@
 import express from 'express';
-import { generateQR, scanRedirect, updateRedirect } from '../controllers/qr.controller.js';
+import { generateQR, scanRedirect, updateRedirect, getTarget } from '../controllers/qr.controller.js';
 
 const router = express.Router();
 
 // Route to generate physical QR code image
 router.get('/generate/:machineId', generateQR);
+
+// Route to get redirect target for a machine
+router.get('/target/:machineId', getTarget);
 
 // Dynamic redirect scan route (the destination URL inside the QR code)
 router.get('/scan/:machineId', scanRedirect);
