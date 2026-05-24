@@ -10,8 +10,7 @@ const connectDB = async (): Promise<void> => {
     const conn = await mongoose.connect(config.DB_URI);
     logger.info(`✅ MongoDB connected: ${conn.connection.host}`);
   } catch (error: any) {
-    logger.error(`❌ MongoDB connection error: ${error.message}`);
-    process.exit(1);
+    logger.error(`❌ MongoDB connection error: ${error.message}. Continuing in SQL-only mode.`);
   }
 };
 

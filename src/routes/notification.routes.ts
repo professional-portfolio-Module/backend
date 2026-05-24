@@ -1,6 +1,7 @@
 import express from 'express';
 import natsService from '../services/natsService.js';
 import notificationService from '../services/notificationService.js';
+import { getNotifications, markAsRead, markAllAsRead, createNotification } from '../controllers/notification.controller.js';
 import catchAsync from '../utils/catchAsync.js';
 import ApiResponse from '../utils/ApiResponse.js';
 import ApiError from '../utils/ApiError.js';
@@ -8,6 +9,11 @@ import logger from '../config/logger.js';
 
 const router = express.Router();
 const NATS_SUBJECT = 'maintenance.notifications';
+
+router.get('/', getNotifications);
+router.post('/', createNotification);
+router.patch('/read-all', markAllAsRead);
+router.patch('/:id/read', markAsRead);
 
 /**
  * Endpoint to test NATS publishing end-to-end.

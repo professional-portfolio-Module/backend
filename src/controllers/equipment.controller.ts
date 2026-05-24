@@ -4,6 +4,7 @@ import ApiResponse from '../utils/ApiResponse.js';
 import ApiError from '../utils/ApiError.js';
 import catchAsync from '../utils/catchAsync.js';
 import { redisService } from '../services/redisService.js';
+import { createNotificationHelper } from './notification.controller.js';
 
 export const getEquipment = catchAsync(async (req: Request, res: Response) => {
   const { search, category_id, status, page = 1, limit = 10 } = req.query;
@@ -357,6 +358,23 @@ export const updateEquipment = catchAsync(async (req: Request, res: Response) =>
   // Invalidate caches
   await redisService.delPattern('equipment:list:*');
   await redisService.del(`equipment:detail:${id}`);
+
+  // Trigger system notifications if status is updated to breakdown or under_maintainace
+  if (status !== undefined && status !== existing.rows[0].status && (status === 'breakdown' || status === 'under_maintainace')) {
+    try {
+      const managersResult = await pool.query("SELECT id FROM users WHERE role IN ('MANAGER', 'ADMIN', 'SUPER_ADMIN')");
+      for (const manager of managersResult.rows) {
+        await createNotificationHelper(
+          manager.id,
+          'system',
+          'Asset Status Alert',
+          `Asset '${joinedResult.rows[0].card_no}' has been marked as '${status}'. Please assign a maintenance task.`
+        );
+      }
+    } catch (notifErr) {
+      console.error('Failed to trigger asset breakdown notification:', notifErr);
+    }
+  }
 
   res.status(200).json(new ApiResponse(200, joinedResult.rows[0], 'Equipment item updated successfully'));
 });
