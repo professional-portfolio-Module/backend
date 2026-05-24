@@ -10,7 +10,9 @@ import catchAsync from '../utils/catchAsync.js';
  * Each user includes their hotels and roles via the join tables.
  */
 export const getUsers = catchAsync(async (req: Request, res: Response) => {
-  const result = await pool.query(`
+  const { hotel_id } = req.query;
+
+  let query = `
     SELECT
       u.id,
       u.name,
@@ -31,10 +33,20 @@ export const getUsers = catchAsync(async (req: Request, res: Response) => {
     LEFT JOIN hotels h ON h.id = uh.hotel_id
     LEFT JOIN user_role ur ON ur.user_id = u.id
     LEFT JOIN roles r ON r.id = ur.role_id
+  `;
+
+  const params: any[] = [];
+  if (hotel_id) {
+    query += ` WHERE u.id IN (SELECT user_id FROM user_hotel WHERE hotel_id = $1) `;
+    params.push(hotel_id);
+  }
+
+  query += `
     GROUP BY u.id
     ORDER BY u.name ASC
-  `);
+  `;
 
+  const result = await pool.query(query, params);
   res.status(200).json(new ApiResponse(200, result.rows, 'Users fetched successfully'));
 });
 
