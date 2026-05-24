@@ -5,13 +5,13 @@ import ApiError from '../utils/ApiError.js';
 import catchAsync from '../utils/catchAsync.js';
 
 export const getCategories = catchAsync(async (req: Request, res: Response) => {
-  const result = await pool.query('SELECT id, code, name, description, created_at FROM equipment_categories ORDER BY name ASC');
+  const result = await pool.query('SELECT id, code, name, description, created_at FROM categories ORDER BY name ASC');
   res.status(200).json(new ApiResponse(200, result.rows, 'Categories fetched successfully'));
 });
 
 export const getCategoryById = catchAsync(async (req: Request, res: Response) => {
   const { id } = req.params;
-  const result = await pool.query('SELECT id, code, name, description, created_at FROM equipment_categories WHERE id = $1', [id]);
+  const result = await pool.query('SELECT id, code, name, description, created_at FROM categories WHERE id = $1', [id]);
   if (result.rows.length === 0) {
     throw new ApiError(404, 'Category not found');
   }
@@ -31,13 +31,13 @@ export const createCategory = catchAsync(async (req: Request, res: Response) => 
   }
 
   // Check if code already exists
-  const existing = await pool.query('SELECT id FROM equipment_categories WHERE code = $1', [normalizedCode]);
+  const existing = await pool.query('SELECT id FROM categories WHERE code = $1', [normalizedCode]);
   if (existing.rows.length > 0) {
     throw new ApiError(400, `Category code '${normalizedCode}' already exists`);
   }
 
   const result = await pool.query(
-    'INSERT INTO equipment_categories (code, name, description) VALUES ($1, $2, $3) RETURNING id, code, name, description, created_at',
+    'INSERT INTO categories (code, name, description) VALUES ($1, $2, $3) RETURNING id, code, name, description, created_at',
     [normalizedCode, name.trim(), description ? description.trim() : null]
   );
 
@@ -49,13 +49,13 @@ export const updateCategory = catchAsync(async (req: Request, res: Response) => 
   const { name, description } = req.body;
 
   // Fetch the category to check if it exists
-  const existing = await pool.query('SELECT id FROM equipment_categories WHERE id = $1', [id]);
+  const existing = await pool.query('SELECT id FROM categories WHERE id = $1', [id]);
   if (existing.rows.length === 0) {
     throw new ApiError(404, 'Category not found');
   }
 
   // Build the dynamic update query allowing only name and description
-  let query = 'UPDATE equipment_categories SET';
+  let query = 'UPDATE categories SET';
   const params: any[] = [];
   let paramIndex = 1;
 

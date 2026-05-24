@@ -26,8 +26,8 @@ export const getEquipment = catchAsync(async (req: Request, res: Response) => {
 
   let query = `
     SELECT e.*, c.name as category_name, c.code as category_code
-    FROM equipment e
-    LEFT JOIN equipment_categories c ON e.category_id = c.id
+    FROM assets e
+    LEFT JOIN categories c ON e.category_id = c.id
     WHERE 1=1
   `;
   const params: any[] = [];
@@ -44,7 +44,7 @@ export const getEquipment = catchAsync(async (req: Request, res: Response) => {
   }
 
   if (search) {
-    query += ` AND (e.equipment_no ILIKE $${paramIndex} OR e.description ILIKE $${paramIndex} OR e.location ILIKE $${paramIndex})`;
+    query += ` AND (e.card_no ILIKE $${paramIndex} OR e.description ILIKE $${paramIndex} OR e.location ILIKE $${paramIndex})`;
     params.push(`%${search}%`);
     paramIndex++;
   }
@@ -55,7 +55,7 @@ export const getEquipment = catchAsync(async (req: Request, res: Response) => {
   const totalItems = parseInt(countResult.rows[0].count, 10);
 
   // Fetch data
-  query += ` ORDER BY e.equipment_no ASC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+  query += ` ORDER BY e.card_no ASC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
   params.push(limitVal, offset);
 
   const dataResult = await pool.query(query, params);
@@ -94,8 +94,8 @@ export const getEquipmentById = catchAsync(async (req: Request, res: Response) =
 
   const query = `
     SELECT e.*, c.name as category_name, c.code as category_code
-    FROM equipment e
-    LEFT JOIN equipment_categories c ON e.category_id = c.id
+    FROM assets e
+    LEFT JOIN categories c ON e.category_id = c.id
     WHERE e.id = $1
   `;
   const result = await pool.query(query, [id]);
@@ -112,35 +112,41 @@ export const getEquipmentById = catchAsync(async (req: Request, res: Response) =
 export const createEquipment = catchAsync(async (req: Request, res: Response) => {
   const {
     equipment_no,
+    card_no, // Support new column name
     category_id,
     description,
     location,
     status,
     installation_date,
     warranty_expiry,
+    warranty_expiery, // Support new column name
     notes,
     hotel_id,
+    qr_code_url, // New column
   } = req.body;
 
-  if (!equipment_no || !category_id || !description) {
-    throw new ApiError(400, 'equipment_no, category_id, and description are required fields');
+  const finalCardNo = card_no || equipment_no;
+  const finalWarrantyExpiry = warranty_expiery || warranty_expiry;
+
+  if (!finalCardNo || !category_id || !description) {
+    throw new ApiError(400, 'card_no, category_id, and description are required fields');
   }
 
-  const normalizedEqNo = equipment_no.toUpperCase().trim();
+  const normalizedEqNo = finalCardNo.toUpperCase().trim();
   if (normalizedEqNo.length > 20) {
-    throw new ApiError(400, 'Equipment number must be at most 20 characters');
+    throw new ApiError(400, 'Card number must be at most 20 characters');
   }
 
   // Validate category_id exists
-  const categoryCheck = await pool.query('SELECT id FROM equipment_categories WHERE id = $1', [category_id]);
+  const categoryCheck = await pool.query('SELECT id FROM categories WHERE id = $1', [category_id]);
   if (categoryCheck.rows.length === 0) {
     throw new ApiError(400, 'Invalid category_id. Category does not exist.');
   }
 
-  // Check if equipment_no already exists
-  const eqNoCheck = await pool.query('SELECT id FROM equipment WHERE equipment_no = $1', [normalizedEqNo]);
+  // Check if card_no already exists
+  const eqNoCheck = await pool.query('SELECT id FROM assets WHERE card_no = $1', [normalizedEqNo]);
   if (eqNoCheck.rows.length > 0) {
-    throw new ApiError(400, `Equipment number '${normalizedEqNo}' already exists`);
+    throw new ApiError(400, `Card number '${normalizedEqNo}' already exists`);
   }
 
   // Resolve hotel_id
@@ -160,22 +166,23 @@ export const createEquipment = catchAsync(async (req: Request, res: Response) =>
   }
 
   // Validate status
-  if (status && !['active', 'inactive', 'retired'].includes(status)) {
-    throw new ApiError(400, "Status must be one of 'active', 'inactive', or 'retired'");
+  if (status && !['active', 'under_maintainace', 'breakdown', 'retired', 'inactive'].includes(status)) {
+    throw new ApiError(400, "Status must be one of 'active', 'under_maintainace', 'breakdown', 'retired', or 'inactive'");
   }
 
   const result = await pool.query(
-    `INSERT INTO equipment (
+    `INSERT INTO assets (
       hotel_id,
-      equipment_no,
+      card_no,
       category_id,
       description,
       location,
       status,
       installation_date,
-      warranty_expiry,
-      notes
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      warranty_expiery,
+      notes,
+      qr_code_url
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
     RETURNING *`,
     [
       targetHotelId,
@@ -185,15 +192,16 @@ export const createEquipment = catchAsync(async (req: Request, res: Response) =>
       location ? location.trim() : null,
       status || 'active',
       installation_date || null,
-      warranty_expiry || null,
+      finalWarrantyExpiry || null,
       notes ? notes.trim() : null,
+      qr_code_url ? qr_code_url.trim() : null,
     ]
   );
 
   const joinedResult = await pool.query(
     `SELECT e.*, c.name as category_name, c.code as category_code
-     FROM equipment e
-     LEFT JOIN equipment_categories c ON e.category_id = c.id
+     FROM assets e
+     LEFT JOIN categories c ON e.category_id = c.id
      WHERE e.id = $1`,
     [result.rows[0].id]
   );
@@ -208,43 +216,49 @@ export const updateEquipment = catchAsync(async (req: Request, res: Response) =>
   const { id } = req.params;
   const {
     equipment_no,
+    card_no, // Support new column name
     category_id,
     description,
     location,
     status,
     installation_date,
     warranty_expiry,
+    warranty_expiery, // Support new column name
     notes,
     hotel_id,
+    qr_code_url, // New column
   } = req.body;
 
-  // Check if equipment exists
-  const existing = await pool.query('SELECT * FROM equipment WHERE id = $1', [id]);
+  // Check if asset exists
+  const existing = await pool.query('SELECT * FROM assets WHERE id = $1', [id]);
   if (existing.rows.length === 0) {
     throw new ApiError(404, 'Equipment item not found');
   }
 
-  let query = 'UPDATE equipment SET';
+  const finalCardNo = card_no !== undefined ? card_no : equipment_no;
+  const finalWarrantyExpiry = warranty_expiery !== undefined ? warranty_expiery : warranty_expiry;
+
+  let query = 'UPDATE assets SET';
   const params: any[] = [];
   let paramIndex = 1;
 
-  if (equipment_no !== undefined) {
-    const normalizedEqNo = equipment_no.toUpperCase().trim();
+  if (finalCardNo !== undefined) {
+    const normalizedEqNo = finalCardNo.toUpperCase().trim();
     if (normalizedEqNo === '') {
-      throw new ApiError(400, 'Equipment number cannot be empty');
+      throw new ApiError(400, 'Card number cannot be empty');
     }
     if (normalizedEqNo.length > 20) {
-      throw new ApiError(400, 'Equipment number must be at most 20 characters');
+      throw new ApiError(400, 'Card number must be at most 20 characters');
     }
     // Check for uniqueness conflict
-    const eqNoCheck = await pool.query('SELECT id FROM equipment WHERE equipment_no = $1 AND id != $2', [
+    const eqNoCheck = await pool.query('SELECT id FROM assets WHERE card_no = $1 AND id != $2', [
       normalizedEqNo,
       id,
     ]);
     if (eqNoCheck.rows.length > 0) {
-      throw new ApiError(400, `Equipment number '${normalizedEqNo}' already exists`);
+      throw new ApiError(400, `Card number '${normalizedEqNo}' already exists`);
     }
-    query += ` equipment_no = $${paramIndex++},`;
+    query += ` card_no = $${paramIndex++},`;
     params.push(normalizedEqNo);
   }
 
@@ -253,7 +267,7 @@ export const updateEquipment = catchAsync(async (req: Request, res: Response) =>
       throw new ApiError(400, 'Category ID cannot be null');
     }
     // Validate category exists
-    const categoryCheck = await pool.query('SELECT id FROM equipment_categories WHERE id = $1', [category_id]);
+    const categoryCheck = await pool.query('SELECT id FROM categories WHERE id = $1', [category_id]);
     if (categoryCheck.rows.length === 0) {
       throw new ApiError(400, 'Invalid category_id. Category does not exist.');
     }
@@ -277,8 +291,8 @@ export const updateEquipment = catchAsync(async (req: Request, res: Response) =>
   }
 
   if (status !== undefined) {
-    if (!['active', 'inactive', 'retired'].includes(status)) {
-      throw new ApiError(400, "Status must be one of 'active', 'inactive', or 'retired'");
+    if (!['active', 'under_maintainace', 'breakdown', 'retired', 'inactive'].includes(status)) {
+      throw new ApiError(400, "Status must be one of 'active', 'under_maintainace', 'breakdown', 'retired', or 'inactive'");
     }
     query += ` status = $${paramIndex++},`;
     params.push(status);
@@ -289,9 +303,9 @@ export const updateEquipment = catchAsync(async (req: Request, res: Response) =>
     params.push(installation_date || null);
   }
 
-  if (warranty_expiry !== undefined) {
-    query += ` warranty_expiry = $${paramIndex++},`;
-    params.push(warranty_expiry || null);
+  if (finalWarrantyExpiry !== undefined) {
+    query += ` warranty_expiery = $${paramIndex++},`;
+    params.push(finalWarrantyExpiry || null);
   }
 
   if (notes !== undefined) {
@@ -312,6 +326,12 @@ export const updateEquipment = catchAsync(async (req: Request, res: Response) =>
     params.push(hotel_id);
   }
 
+  if (qr_code_url !== undefined) {
+    const val = qr_code_url !== null ? qr_code_url.trim() : null;
+    query += ` qr_code_url = $${paramIndex++},`;
+    params.push(val);
+  }
+
   if (params.length === 0) {
     throw new ApiError(400, 'No fields provided for update');
   }
@@ -328,8 +348,8 @@ export const updateEquipment = catchAsync(async (req: Request, res: Response) =>
   // Return joined details
   const joinedResult = await pool.query(
     `SELECT e.*, c.name as category_name, c.code as category_code
-     FROM equipment e
-     LEFT JOIN equipment_categories c ON e.category_id = c.id
+     FROM assets e
+     LEFT JOIN categories c ON e.category_id = c.id
      WHERE e.id = $1`,
     [id]
   );
