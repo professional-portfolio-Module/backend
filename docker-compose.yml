@@ -38,7 +38,17 @@ services:
       interval: 5s
       timeout: 5s
       retries: 3
-
+  redis:
+    image: redis:alpine
+    container_name: app-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
 
   nginx:
     image: nginx:alpine

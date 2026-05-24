@@ -3,6 +3,7 @@ import { pool } from '../config/postgres.js';
 import ApiResponse from '../utils/ApiResponse.js';
 import ApiError from '../utils/ApiError.js';
 import catchAsync from '../utils/catchAsync.js';
+import { redisService } from '../services/redisService.js';
 
 export const getEquipment = catchAsync(async (req: Request, res: Response) => {
   const { search, category_id, status, page = 1, limit = 10 } = req.query;
@@ -10,6 +11,18 @@ export const getEquipment = catchAsync(async (req: Request, res: Response) => {
   const pageVal = Math.max(1, parseInt(page as string, 10) || 1);
   const limitVal = Math.max(1, Math.min(100, parseInt(limit as string, 10) || 10));
   const offset = (pageVal - 1) * limitVal;
+
+  const cacheKey = `equipment:list:search=${search || ''}:category_id=${category_id || ''}:status=${status || ''}:page=${pageVal}:limit=${limitVal}`;
+  const cachedData = await redisService.get(cacheKey);
+  if (cachedData) {
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        JSON.parse(cachedData),
+        'Equipment list fetched successfully (cached)'
+      )
+    );
+  }
 
   let query = `
     SELECT e.*, c.name as category_name, c.code as category_code
@@ -48,18 +61,22 @@ export const getEquipment = catchAsync(async (req: Request, res: Response) => {
   const dataResult = await pool.query(query, params);
   const totalPages = Math.ceil(totalItems / limitVal);
 
+  const responseData = {
+    items: dataResult.rows,
+    pagination: {
+      totalItems,
+      totalPages,
+      currentPage: pageVal,
+      limit: limitVal,
+    },
+  };
+
+  await redisService.set(cacheKey, JSON.stringify(responseData));
+
   res.status(200).json(
     new ApiResponse(
       200,
-      {
-        items: dataResult.rows,
-        pagination: {
-          totalItems,
-          totalPages,
-          currentPage: pageVal,
-          limit: limitVal,
-        },
-      },
+      responseData,
       'Equipment list fetched successfully'
     )
   );
@@ -67,6 +84,14 @@ export const getEquipment = catchAsync(async (req: Request, res: Response) => {
 
 export const getEquipmentById = catchAsync(async (req: Request, res: Response) => {
   const { id } = req.params;
+  const cacheKey = `equipment:detail:${id}`;
+  const cachedData = await redisService.get(cacheKey);
+  if (cachedData) {
+    return res.status(200).json(
+      new ApiResponse(200, JSON.parse(cachedData), 'Equipment details fetched successfully (cached)')
+    );
+  }
+
   const query = `
     SELECT e.*, c.name as category_name, c.code as category_code
     FROM equipment e
@@ -77,7 +102,11 @@ export const getEquipmentById = catchAsync(async (req: Request, res: Response) =
   if (result.rows.length === 0) {
     throw new ApiError(404, 'Equipment item not found');
   }
-  res.status(200).json(new ApiResponse(200, result.rows[0], 'Equipment details fetched successfully'));
+
+  const detail = result.rows[0];
+  await redisService.set(cacheKey, JSON.stringify(detail));
+
+  res.status(200).json(new ApiResponse(200, detail, 'Equipment details fetched successfully'));
 });
 
 export const createEquipment = catchAsync(async (req: Request, res: Response) => {
@@ -168,6 +197,9 @@ export const createEquipment = catchAsync(async (req: Request, res: Response) =>
      WHERE e.id = $1`,
     [result.rows[0].id]
   );
+
+  // Invalidate list caches
+  await redisService.delPattern('equipment:list:*');
 
   res.status(201).json(new ApiResponse(201, joinedResult.rows[0], 'Equipment item created successfully'));
 });
@@ -301,6 +333,10 @@ export const updateEquipment = catchAsync(async (req: Request, res: Response) =>
      WHERE e.id = $1`,
     [id]
   );
+
+  // Invalidate caches
+  await redisService.delPattern('equipment:list:*');
+  await redisService.del(`equipment:detail:${id}`);
 
   res.status(200).json(new ApiResponse(200, joinedResult.rows[0], 'Equipment item updated successfully'));
 });

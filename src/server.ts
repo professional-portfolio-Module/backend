@@ -3,6 +3,7 @@ import config from './config/config.js';
 import connectDB from './config/db.js';
 import { connectPostgres } from './config/postgres.js';
 import { startNotificationConsumer } from './services/notificationConsumer.js';
+import { redisService } from './services/redisService.js';
 import logger from './config/logger.js';
 
 const PORT = config.PORT;
@@ -12,6 +13,7 @@ const PORT = config.PORT;
   try {
     await connectDB();
     await connectPostgres();
+    await redisService.connect();
 
     // Start NATS Notification Consumer asynchronously
     startNotificationConsumer().catch((err) => {
@@ -31,6 +33,7 @@ const PORT = config.PORT;
         logger.info('Express server closed.');
         const { natsService } = await import('./services/natsService.js');
         await natsService.disconnect();
+        await redisService.disconnect();
         process.exit(0);
       });
     };
