@@ -55,9 +55,9 @@ export const generateQR = catchAsync(async (req: Request, res: Response) => {
   logger.info(`Generating QR code for asset: ${machineId} (Scan URL: ${redirectScanUrl})`);
 
   try {
-    // Generate the QR code as a PNG buffer
-    const qrBuffer = await QRCode.toBuffer(redirectScanUrl, {
-      type: 'png',
+    // Generate the QR code as a Base64 Data URL to prevent binary corruption through API gateways
+    const qrDataUrl = await QRCode.toDataURL(redirectScanUrl, {
+      type: 'image/png',
       width: 300,
       margin: 2,
       color: {
@@ -66,8 +66,7 @@ export const generateQR = catchAsync(async (req: Request, res: Response) => {
       },
     });
 
-    res.setHeader('Content-Type', 'image/png');
-    res.send(qrBuffer);
+    res.send(new ApiResponse(200, { qrCode: qrDataUrl }, 'QR code generated successfully'));
   } catch (error) {
     logger.error(`Error generating QR code for asset ${machineId}:`, error);
     throw new ApiError(500, 'Failed to generate QR code image for asset');
