@@ -1,42 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import QRCode from 'qrcode';
+import { pool } from '../config/postgres.js';
 import logger from '../config/logger.js';
 import ApiError from '../utils/ApiError.js';
 import ApiResponse from '../utils/ApiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const redirectsFilePath = path.resolve(__dirname, '../config/redirects.json');
-
-// Helper to read redirect mappings
-const readRedirects = (): Record<string, string> => {
-  try {
-    if (!fs.existsSync(redirectsFilePath)) {
-      fs.writeFileSync(redirectsFilePath, JSON.stringify({}, null, 2));
-      return {};
-    }
-    const data = fs.readFileSync(redirectsFilePath, 'utf-8');
-    return JSON.parse(data || '{}');
-  } catch (error) {
-    logger.error('Error reading redirects mapping file:', error);
-    return {};
-  }
-};
-
-// Helper to write redirect mappings
-const writeRedirects = (mappings: Record<string, string>): void => {
-  try {
-    fs.writeFileSync(redirectsFilePath, JSON.stringify(mappings, null, 2));
-  } catch (error) {
-    logger.error('Error writing redirects mapping file:', error);
-    throw new ApiError(500, 'Could not save redirect configuration');
-  }
-};
+// Removed filesystem read/write helpers in favor of direct database queries
 
 export const generateQR = catchAsync(async (req: Request, res: Response) => {
   const machineId = req.params.machineId as string;
@@ -82,8 +52,8 @@ export const scanRedirect = catchAsync(async (req: Request, res: Response) => {
 
   logger.info(`QR code scanned for asset Card No: ${machineId}`);
 
-  const redirects = readRedirects();
-  const targetUrl = redirects[machineId];
+  const result = await pool.query('SELECT qr_code_url FROM assets WHERE card_no = $1', [machineId]);
+  const targetUrl = result.rows.length > 0 ? result.rows[0].qr_code_url : null;
 
   if (!targetUrl) {
     logger.warn(`Scan for unregistered or unconfigured asset: ${machineId}`);
@@ -180,9 +150,14 @@ export const updateRedirect = catchAsync(async (req: Request, res: Response) => 
     throw new ApiError(400, 'Invalid targetUrl format. Must be a valid absolute URL (e.g., https://example.com)');
   }
 
-  const redirects = readRedirects();
-  redirects[machineId] = targetUrl;
-  writeRedirects(redirects);
+  const result = await pool.query(
+    'UPDATE assets SET qr_code_url = $1, updated_at = CURRENT_TIMESTAMP WHERE card_no = $2 RETURNING *',
+    [targetUrl, machineId]
+  );
+
+  if (result.rowCount === 0) {
+    throw new ApiError(404, 'Asset not found');
+  }
 
   logger.info(`Updated redirect mapping for asset: '${machineId}' -> '${targetUrl}'`);
 
@@ -201,8 +176,8 @@ export const getTarget = catchAsync(async (req: Request, res: Response) => {
     throw new ApiError(400, 'Asset Card No is required');
   }
 
-  const redirects = readRedirects();
-  const targetUrl = redirects[machineId] || '';
+  const result = await pool.query('SELECT qr_code_url FROM assets WHERE card_no = $1', [machineId]);
+  const targetUrl = result.rows.length > 0 ? (result.rows[0].qr_code_url || '') : '';
 
   res.send(
     new ApiResponse(200, {
