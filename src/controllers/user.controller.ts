@@ -7,7 +7,7 @@ import catchAsync from '../utils/catchAsync.js';
 /**
  * GET /api/users
  * Returns all users (excluding password_hash).
- * Each user includes their hotels and roles via the join tables.
+ * Scoped by hotel_id if provided.
  */
 export const getUsers = catchAsync(async (req: Request, res: Response) => {
   const { hotel_id } = req.query;
@@ -20,39 +20,44 @@ export const getUsers = catchAsync(async (req: Request, res: Response) => {
       u.role,
       u.is_active,
       u.created_at,
-      COALESCE(
-        json_agg(DISTINCT jsonb_build_object('id', h.id, 'name', h.name, 'city', h.city)) 
-        FILTER (WHERE h.id IS NOT NULL), '[]'
-      ) AS hotels,
-      COALESCE(
-        json_agg(DISTINCT jsonb_build_object('id', r.id, 'name', r.name)) 
-        FILTER (WHERE r.id IS NOT NULL), '[]'
-      ) AS roles
+      u.mobilenumber,
+      u.hotel_id,
+      h.name AS hotel_name,
+      h.city AS hotel_city
     FROM users u
-    LEFT JOIN user_hotel uh ON uh.user_id = u.id
-    LEFT JOIN hotels h ON h.id = uh.hotel_id
-    LEFT JOIN user_role ur ON ur.user_id = u.id
-    LEFT JOIN roles r ON r.id = ur.role_id
+    LEFT JOIN hotels h ON h.id = u.hotel_id
   `;
 
   const params: any[] = [];
   if (hotel_id) {
-    query += ` WHERE u.id IN (SELECT user_id FROM user_hotel WHERE hotel_id = $1) `;
+    query += ` WHERE u.hotel_id = $1 `;
     params.push(hotel_id);
   }
 
   query += `
-    GROUP BY u.id
     ORDER BY u.name ASC
   `;
 
   const result = await pool.query(query, params);
-  res.status(200).json(new ApiResponse(200, result.rows, 'Users fetched successfully'));
+
+  // Format to output structure the frontend expects
+  const formattedRows = result.rows.map((row: any) => ({
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    role: row.role,
+    is_active: row.is_active,
+    created_at: row.created_at,
+    mobilenumber: row.mobilenumber,
+    hotels: row.hotel_id ? [{ id: row.hotel_id, name: row.hotel_name, city: row.hotel_city }] : []
+  }));
+
+  res.status(200).json(new ApiResponse(200, formattedRows, 'Users fetched successfully'));
 });
 
 /**
  * GET /api/users/:id
- * Returns a single user (excluding password_hash) with their hotels and roles.
+ * Returns a single user (excluding password_hash) with their associated hotel.
  */
 export const getUserById = catchAsync(async (req: Request, res: Response) => {
   const { id } = req.params;
@@ -65,26 +70,30 @@ export const getUserById = catchAsync(async (req: Request, res: Response) => {
       u.role,
       u.is_active,
       u.created_at,
-      COALESCE(
-        json_agg(DISTINCT jsonb_build_object('id', h.id, 'name', h.name, 'city', h.city)) 
-        FILTER (WHERE h.id IS NOT NULL), '[]'
-      ) AS hotels,
-      COALESCE(
-        json_agg(DISTINCT jsonb_build_object('id', r.id, 'name', r.name)) 
-        FILTER (WHERE r.id IS NOT NULL), '[]'
-      ) AS roles
+      u.mobilenumber,
+      u.hotel_id,
+      h.name AS hotel_name,
+      h.city AS hotel_city
     FROM users u
-    LEFT JOIN user_hotel uh ON uh.user_id = u.id
-    LEFT JOIN hotels h ON h.id = uh.hotel_id
-    LEFT JOIN user_role ur ON ur.user_id = u.id
-    LEFT JOIN roles r ON r.id = ur.role_id
+    LEFT JOIN hotels h ON h.id = u.hotel_id
     WHERE u.id = $1
-    GROUP BY u.id
   `, [id]);
 
   if (result.rows.length === 0) {
     throw new ApiError(404, 'User not found');
   }
 
-  res.status(200).json(new ApiResponse(200, result.rows[0], 'User fetched successfully'));
+  const row = result.rows[0];
+  const formattedUser = {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    role: row.role,
+    is_active: row.is_active,
+    created_at: row.created_at,
+    mobilenumber: row.mobilenumber,
+    hotels: row.hotel_id ? [{ id: row.hotel_id, name: row.hotel_name, city: row.hotel_city }] : []
+  };
+
+  res.status(200).json(new ApiResponse(200, formattedUser, 'User fetched successfully'));
 });
