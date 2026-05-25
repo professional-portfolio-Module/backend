@@ -11,6 +11,7 @@ import catchAsync from '../utils/catchAsync.js';
  */
 export const getUsers = catchAsync(async (req: Request, res: Response) => {
   const { hotel_id } = req.query;
+  console.log('getUsers endpoint triggered. req.query:', req.query);
 
   let query = `
     SELECT
