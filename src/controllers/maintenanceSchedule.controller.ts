@@ -5,7 +5,7 @@ import ApiError from '../utils/ApiError.js';
 import catchAsync from '../utils/catchAsync.js';
 
 export const getMaintenanceSchedules = catchAsync(async (req: Request, res: Response) => {
-  const { hotel_id, month, card_no, page = '1', limit = '50' } = req.query;
+  const { hotel_id, month, card_no, page = '1', limit = '50', search, week_no } = req.query;
 
   if (!hotel_id) {
     throw new ApiError(400, 'Hotel ID is required');
@@ -28,6 +28,17 @@ export const getMaintenanceSchedules = catchAsync(async (req: Request, res: Resp
   if (card_no) {
     whereClause += ` AND s.card_no = $${paramIndex++}`;
     params.push(card_no);
+  }
+
+  if (week_no) {
+    whereClause += ` AND s.week_no = $${paramIndex++}`;
+    params.push(parseInt(week_no as string, 10));
+  }
+
+  if (search) {
+    whereClause += ` AND (s.title ILIKE $${paramIndex} OR s.default_description_manager ILIKE $${paramIndex})`;
+    paramIndex++;
+    params.push(`%${search}%`);
   }
 
   // Count total
