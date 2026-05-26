@@ -3,9 +3,18 @@ import { pool } from '../config/postgres.js';
 import ApiResponse from '../utils/ApiResponse.js';
 import ApiError from '../utils/ApiError.js';
 import catchAsync from '../utils/catchAsync.js';
+import { redisService } from '../services/redisService.js';
 
 export const getManualTasks = catchAsync(async (req: Request, res: Response) => {
   const { hotel_id, status, priority, assigned_to, card_no, search } = req.query;
+
+  const cacheKey = `manualTasks:list:hotel_id=${hotel_id || ''}:status=${status || ''}:priority=${priority || ''}:assigned_to=${assigned_to || ''}:card_no=${card_no || ''}:search=${search || ''}`;
+  const cachedData = await redisService.get(cacheKey);
+  if (cachedData) {
+    return res.status(200).json(
+      new ApiResponse(200, JSON.parse(cachedData), 'Manual tasks fetched successfully (cached)')
+    );
+  }
 
   let query = `
     SELECT 
@@ -58,6 +67,8 @@ export const getManualTasks = catchAsync(async (req: Request, res: Response) => 
   query += ` ORDER BY t.created_at DESC`;
 
   const result = await pool.query(query, params);
+
+  await redisService.set(cacheKey, JSON.stringify(result.rows));
 
   res.status(200).json(
     new ApiResponse(200, result.rows, 'Manual tasks fetched successfully')
@@ -120,6 +131,8 @@ export const createManualTask = catchAsync(async (req: Request, res: Response) =
     tech_remarks || null,
     eng_remarks || null
   ]);
+
+  await redisService.delPattern('manualTasks:list:*');
 
   res.status(201).json(
     new ApiResponse(201, result.rows[0], 'Manual task created successfully')
@@ -237,6 +250,8 @@ export const updateManualTask = catchAsync(async (req: Request, res: Response) =
 
   const result = await pool.query(query, params);
 
+  await redisService.delPattern('manualTasks:list:*');
+
   res.status(200).json(
     new ApiResponse(200, result.rows[0], 'Manual task updated successfully')
   );
@@ -251,6 +266,8 @@ export const deleteManualTask = catchAsync(async (req: Request, res: Response) =
   }
 
   await pool.query('DELETE FROM manual_task WHERE manual_task_id = $1', [id]);
+
+  await redisService.delPattern('manualTasks:list:*');
 
   res.status(200).json(new ApiResponse(200, null, 'Manual task deleted successfully'));
 });
