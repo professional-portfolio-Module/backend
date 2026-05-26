@@ -9,6 +9,7 @@ import userRoutes from './user.routes.js';
 import roleRoutes from './role.routes.js';
 import messageRoutes from './message.routes.js';
 import manualTaskRoutes from './manualTask.routes.js';
+import maintenanceScheduleRoutes from './maintenanceSchedule.routes.js';
 
 const router = express.Router();
 
@@ -52,6 +53,10 @@ const defaultRoutes = [
   {
     path: '/manual-tasks',
     route: manualTaskRoutes,
+  },
+  {
+    path: '/maintenance-schedules',
+    route: maintenanceScheduleRoutes,
   },
 ];
 
