@@ -81,8 +81,8 @@ export const createManualTask = catchAsync(async (req: Request, res: Response) =
     eng_remarks
   } = req.body;
 
-  if (!hotel_id || !title) {
-    throw new ApiError(400, 'Hotel ID and Title are required fields');
+  if (!hotel_id || !title || !assigned_to || !card_no) {
+    throw new ApiError(400, 'Hotel ID, Title, Assigned Technician, and Asset selection are required fields');
   }
 
   // Validate priority check constraint
@@ -109,10 +109,10 @@ export const createManualTask = catchAsync(async (req: Request, res: Response) =
     hotel_id,
     title.trim(),
     description ? description.trim() : null,
-    assigned_to || null,
+    assigned_to,
     assigned_by || null,
     checked_by || null,
-    card_no || null,
+    card_no,
     status,
     priority,
     attachment_url || null,
@@ -148,6 +148,14 @@ export const updateManualTask = catchAsync(async (req: Request, res: Response) =
   const existing = await pool.query('SELECT * FROM manual_task WHERE manual_task_id = $1', [id]);
   if (existing.rows.length === 0) {
     throw new ApiError(404, 'Manual task not found');
+  }
+
+  // Validate fields if provided
+  if (assigned_to !== undefined && !assigned_to) {
+    throw new ApiError(400, 'Assigned technician is a required field');
+  }
+  if (card_no !== undefined && !card_no) {
+    throw new ApiError(400, 'Asset selection is a required field');
   }
 
   // Validate priority if provided
