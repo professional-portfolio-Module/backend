@@ -5,37 +5,52 @@ import ApiError from '../utils/ApiError.js';
 import catchAsync from '../utils/catchAsync.js';
 
 export const getMaintenanceSchedules = catchAsync(async (req: Request, res: Response) => {
-  const { hotel_id, month, card_no } = req.query;
+  const { hotel_id, month, card_no, page = '1', limit = '50' } = req.query;
 
   if (!hotel_id) {
     throw new ApiError(400, 'Hotel ID is required');
   }
 
-  let query = `
+  const pageNum = Math.max(1, parseInt(page as string, 10) || 1);
+  const limitNum = Math.min(200, Math.max(1, parseInt(limit as string, 10) || 50));
+  const offset = (pageNum - 1) * limitNum;
+
+  // Build WHERE clause
+  let whereClause = ` WHERE s.hotel_id = $1`;
+  const params: any[] = [hotel_id];
+  let paramIndex = 2;
+
+  if (month) {
+    whereClause += ` AND s.month = $${paramIndex++}`;
+    params.push(month);
+  }
+
+  if (card_no) {
+    whereClause += ` AND s.card_no = $${paramIndex++}`;
+    params.push(card_no);
+  }
+
+  // Count total
+  const countQuery = `SELECT COUNT(*) as total FROM maintenance_schedule s ${whereClause}`;
+  const countResult = await pool.query(countQuery, params);
+  const totalItems = parseInt(countResult.rows[0].total, 10);
+  const totalPages = Math.ceil(totalItems / limitNum);
+
+  // Fetch paginated schedules
+  const dataQuery = `
     SELECT 
       s.*,
       a.description as asset_description,
       a.location as asset_location
     FROM maintenance_schedule s
     LEFT JOIN assets a ON s.card_no = a.card_no
-    WHERE s.hotel_id = $1
+    ${whereClause}
+    ORDER BY s.created_at DESC
+    LIMIT $${paramIndex++} OFFSET $${paramIndex++}
   `;
-  const params: any[] = [hotel_id];
-  let paramIndex = 2;
+  params.push(limitNum, offset);
 
-  if (month) {
-    query += ` AND s.month = $${paramIndex++}`;
-    params.push(month);
-  }
-
-  if (card_no) {
-    query += ` AND s.card_no = $${paramIndex++}`;
-    params.push(card_no);
-  }
-
-  query += ` ORDER BY s.created_at DESC`;
-
-  const result = await pool.query(query, params);
+  const result = await pool.query(dataQuery, params);
   const schedules = result.rows;
 
   if (schedules.length > 0) {
@@ -68,7 +83,15 @@ export const getMaintenanceSchedules = catchAsync(async (req: Request, res: Resp
   }
 
   res.status(200).json(
-    new ApiResponse(200, schedules, 'Maintenance schedules fetched successfully')
+    new ApiResponse(200, {
+      items: schedules,
+      pagination: {
+        totalItems,
+        totalPages,
+        currentPage: pageNum,
+        limit: limitNum,
+      }
+    }, 'Maintenance schedules fetched successfully')
   );
 });
 
