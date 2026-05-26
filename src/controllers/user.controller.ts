@@ -98,3 +98,52 @@ export const getUserById = catchAsync(async (req: Request, res: Response) => {
 
   res.status(200).json(new ApiResponse(200, formattedUser, 'User fetched successfully'));
 });
+
+export const updateUser = catchAsync(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { name, phone, mobilenumber, mobileNumber } = req.body;
+
+  const resolvedPhone = phone || mobilenumber || mobileNumber;
+
+  const check = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+  if (check.rows.length === 0) {
+    throw new ApiError(404, 'User not found');
+  }
+
+  let query = 'UPDATE users SET';
+  const params: any[] = [];
+  let paramIndex = 1;
+
+  if (name !== undefined) {
+    query += ` name = $${paramIndex++},`;
+    params.push(name.trim());
+  }
+  if (resolvedPhone !== undefined) {
+    query += ` mobilenumber = $${paramIndex++},`;
+    params.push(resolvedPhone.trim());
+  }
+
+  if (params.length === 0) {
+    throw new ApiError(400, 'No fields to update');
+  }
+
+  query = query.slice(0, -1) + ` WHERE id = $${paramIndex} RETURNING *`;
+  params.push(id);
+
+  const result = await pool.query(query, params);
+  res.status(200).json(new ApiResponse(200, result.rows[0], 'User updated successfully'));
+});
+
+export const deleteUser = catchAsync(async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  const check = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+  if (check.rows.length === 0) {
+    throw new ApiError(404, 'User not found');
+  }
+
+  // Soft delete / deactivate user
+  await pool.query('UPDATE users SET is_active = false WHERE id = $1', [id]);
+
+  res.status(200).json(new ApiResponse(200, null, 'User deactivated successfully'));
+});
