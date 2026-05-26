@@ -402,3 +402,15 @@ export const deleteEquipment = catchAsync(async (req: Request, res: Response) =>
 
   res.status(200).json(new ApiResponse(200, null, 'Equipment item soft deleted successfully'));
 });
+
+export const getEquipmentStatuses = catchAsync(async (req: Request, res: Response) => {
+  const statuses = [
+    { value: 'active', label: 'Active' },
+    { value: 'under_maintainace', label: 'Under Maintenance' },
+    { value: 'breakdown', label: 'Breakdown' },
+    { value: 'retired', label: 'Retired' },
+    { value: 'inactive', label: 'Inactive' },
+  ];
+  res.status(200).json(new ApiResponse(200, statuses, 'Equipment statuses fetched successfully'));
+});
+
