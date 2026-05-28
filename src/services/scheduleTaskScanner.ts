@@ -30,6 +30,7 @@ export async function scanSchedulesAndCreateTasks(): Promise<void> {
       LEFT JOIN assets a ON s.card_no = a.card_no
       WHERE s.is_active = true
         AND s.start_date <= CURRENT_DATE + INTERVAL '1 day'
+        AND s.start_date >= CURRENT_DATE - INTERVAL '7 days'
         AND NOT EXISTS (
           SELECT 1 
           FROM scheduled_tasks t 
