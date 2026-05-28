@@ -37,12 +37,14 @@ export async function expirePastDueTasks(): Promise<number> {
             );
             for (const tech of techsRes.rows) {
               await pool.query(
-                `INSERT INTO notifications (id, user_id, notification_type, title, content, read, created_at)
-                 VALUES (uuid_generate_v4(), $1, 'task_expired', $2, $3, false, NOW())`,
+                `INSERT INTO notifications (id, user_id, notification_type, title, content, read, created_at, entity_id, entity_type)
+                 VALUES (uuid_generate_v4(), $1, 'task_expired', $2, $3, false, NOW(), $4, $5)`,
                 [
                   tech.id,
                   `Task Expired: ${info.title}`,
-                  `Your assigned task "${info.title}" for asset ${info.card_no} has expired because it was not completed before the due date.`
+                  `Your assigned task "${info.title}" for asset ${info.card_no} has expired because it was not completed before the due date.`,
+                  task.task_id,
+                  'scheduled_task'
                 ]
               );
             }
@@ -183,7 +185,9 @@ export async function scanSchedulesAndCreateTasks(): Promise<void> {
             title,
             content,
             read,
-            created_at
+            created_at,
+            entity_id,
+            entity_type
           ) VALUES (
             uuid_generate_v4(),
             $1,
@@ -191,7 +195,9 @@ export async function scanSchedulesAndCreateTasks(): Promise<void> {
             $2,
             $3,
             false,
-            NOW()
+            NOW(),
+            $4,
+            'scheduled_task'
           );
         `;
         const notificationTitle = `New Maintenance Job: ${title}`;
@@ -200,7 +206,8 @@ export async function scanSchedulesAndCreateTasks(): Promise<void> {
         await client.query(insertNotificationQuery, [
           user_id,
           notificationTitle,
-          notificationContent
+          notificationContent,
+          newTaskId
         ]);
 
         // 5. Send Email and other notifications via NotificationService

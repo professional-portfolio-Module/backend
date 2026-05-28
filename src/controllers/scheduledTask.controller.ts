@@ -48,7 +48,9 @@ export const handleTaskNotificationDispatch = async (oldTask: any, updatedTask: 
           eng.id,
           'system',
           `🚨 Emergency Escalation: ${info.title}`,
-          `Task "${info.title}" for asset ${info.card_no} has been escalated to EMERGENCY. Please review the asset.`
+          `Task "${info.title}" for asset ${info.card_no} has been escalated to EMERGENCY. Please review the asset.`,
+          updatedTask.task_id,
+          'scheduled_task'
         );
       }
     }
@@ -60,7 +62,9 @@ export const handleTaskNotificationDispatch = async (oldTask: any, updatedTask: 
           eng.id,
           'task_completed',
           `Task Completed: ${info.title}`,
-          `Scheduled task "${info.title}" for asset ${info.card_no} has been marked as completed.`
+          `Scheduled task "${info.title}" for asset ${info.card_no} has been marked as completed.`,
+          updatedTask.task_id,
+          'scheduled_task'
         );
       }
     }
@@ -72,7 +76,9 @@ export const handleTaskNotificationDispatch = async (oldTask: any, updatedTask: 
           tech.id,
           'system',
           `Task Under Review: ${info.title}`,
-          `Emergency task "${info.title}" for asset ${info.card_no} is now under review by an engineer.`
+          `Emergency task "${info.title}" for asset ${info.card_no} is now under review by an engineer.`,
+          updatedTask.task_id,
+          'scheduled_task'
         );
       }
     }
@@ -84,7 +90,9 @@ export const handleTaskNotificationDispatch = async (oldTask: any, updatedTask: 
           tech.id,
           'system',
           `Task Rejected: ${info.title}`,
-          `Task "${info.title}" for asset ${info.card_no} was reviewed and rejected. Remarks: ${updatedTask.engineer_remarks || 'No remarks provided.'}`
+          `Task "${info.title}" for asset ${info.card_no} was reviewed and rejected. Remarks: ${updatedTask.engineer_remarks || 'No remarks provided.'}`,
+          updatedTask.task_id,
+          'scheduled_task'
         );
       }
     }
@@ -96,7 +104,9 @@ export const handleTaskNotificationDispatch = async (oldTask: any, updatedTask: 
           tech.id,
           'task_expired',
           `Task Expired: ${info.title}`,
-          `Your assigned task "${info.title}" for asset ${info.card_no} has expired because it was not completed before the due date.`
+          `Your assigned task "${info.title}" for asset ${info.card_no} has expired because it was not completed before the due date.`,
+          updatedTask.task_id,
+          'scheduled_task'
         );
       }
     }
