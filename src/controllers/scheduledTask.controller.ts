@@ -3,6 +3,108 @@ import { pool } from '../config/postgres.js';
 import ApiResponse from '../utils/ApiResponse.js';
 import ApiError from '../utils/ApiError.js';
 import catchAsync from '../utils/catchAsync.js';
+import { createNotificationHelper } from './notification.controller.js';
+
+// Helper to handle sending notifications on scheduled task state transitions
+export const handleTaskNotificationDispatch = async (oldTask: any, updatedTask: any) => {
+  try {
+    const statusChanged = oldTask.status !== updatedTask.status;
+    const priorityChanged = oldTask.priority !== updatedTask.priority;
+
+    if (!statusChanged && !priorityChanged) {
+      return;
+    }
+
+    // Fetch details of the schedule, hotel and asset
+    const infoQuery = `
+      SELECT s.title, s.card_no, s.hotel_id
+      FROM maintenance_schedule s
+      WHERE s.schedule_id = $1
+    `;
+    const infoRes = await pool.query(infoQuery, [updatedTask.scheduled_id]);
+    if (infoRes.rows.length === 0) return;
+    const info = infoRes.rows[0];
+
+    // Fetch engineers at this hotel
+    const engineersQuery = `
+      SELECT id FROM users 
+      WHERE hotel_id = $1 AND role = 'ENGINEER' AND is_active = true
+    `;
+    const engineersRes = await pool.query(engineersQuery, [info.hotel_id]);
+
+    // Fetch assigned technicians
+    const techsQuery = `
+      SELECT u.id 
+      FROM assignments assign
+      JOIN users u ON assign.user_id = u.id
+      WHERE assign.scheduled_id = $1 AND u.is_active = true
+    `;
+    const techsRes = await pool.query(techsQuery, [updatedTask.scheduled_id]);
+
+    // 1. Escalated to Emergency
+    if (priorityChanged && updatedTask.priority === 'emergency') {
+      for (const eng of engineersRes.rows) {
+        await createNotificationHelper(
+          eng.id,
+          'system',
+          `🚨 Emergency Escalation: ${info.title}`,
+          `Task "${info.title}" for asset ${info.card_no} has been escalated to EMERGENCY. Please review the asset.`
+        );
+      }
+    }
+
+    // 2. Completed
+    if (statusChanged && updatedTask.status === 'completed') {
+      for (const eng of engineersRes.rows) {
+        await createNotificationHelper(
+          eng.id,
+          'task_completed',
+          `Task Completed: ${info.title}`,
+          `Scheduled task "${info.title}" for asset ${info.card_no} has been marked as completed.`
+        );
+      }
+    }
+
+    // 3. Under Review
+    if (statusChanged && updatedTask.status === 'under_review') {
+      for (const tech of techsRes.rows) {
+        await createNotificationHelper(
+          tech.id,
+          'system',
+          `Task Under Review: ${info.title}`,
+          `Emergency task "${info.title}" for asset ${info.card_no} is now under review by an engineer.`
+        );
+      }
+    }
+
+    // 4. Rejected
+    if (statusChanged && updatedTask.status === 'rejected') {
+      for (const tech of techsRes.rows) {
+        await createNotificationHelper(
+          tech.id,
+          'system',
+          `Task Rejected: ${info.title}`,
+          `Task "${info.title}" for asset ${info.card_no} was reviewed and rejected. Remarks: ${updatedTask.engineer_remarks || 'No remarks provided.'}`
+        );
+      }
+    }
+
+    // 5. Expired
+    if (statusChanged && updatedTask.status === 'expired') {
+      for (const tech of techsRes.rows) {
+        await createNotificationHelper(
+          tech.id,
+          'task_expired',
+          `Task Expired: ${info.title}`,
+          `Your assigned task "${info.title}" for asset ${info.card_no} has expired because it was not completed before the due date.`
+        );
+      }
+    }
+
+  } catch (err) {
+    console.error('Failed to dispatch scheduled task state change notifications:', err);
+  }
+};
 
 /**
  * GET /api/scheduled-tasks
@@ -154,10 +256,14 @@ export const getPendingTaskByAsset = catchAsync(async (req: Request, res: Respon
 
   // Dynamic Auto-Expiration: check if due_date has passed
   if (task.due_date && new Date(task.due_date) < new Date(new Date().setHours(0,0,0,0))) {
-    await pool.query(
-      "UPDATE scheduled_tasks SET status = 'expired', updated_at = NOW() WHERE task_id = $1",
+    const updateRes = await pool.query(
+      "UPDATE scheduled_tasks SET status = 'expired', updated_at = NOW() WHERE task_id = $1 RETURNING *",
       [task.task_id]
     );
+    const updatedTask = updateRes.rows[0];
+    handleTaskNotificationDispatch(task, updatedTask).catch(err => {
+      console.error("Error dispatching notification:", err);
+    });
     return res.status(200).json(new ApiResponse(200, null, 'No pending scheduled tasks found for this asset (task expired)'));
   }
 
@@ -183,10 +289,11 @@ export const updateScheduledTask = catchAsync(async (req: Request, res: Response
   const { status, technician_remarks, engineer_remarks, attachment_url, done_by, checked_by, priority } = req.body;
 
   // Verify task exists
-  const checkRes = await pool.query('SELECT task_id FROM scheduled_tasks WHERE task_id = $1', [taskId]);
+  const checkRes = await pool.query('SELECT * FROM scheduled_tasks WHERE task_id = $1', [taskId]);
   if (checkRes.rows.length === 0) {
     throw new ApiError(404, 'Scheduled task not found');
   }
+  const oldTask = checkRes.rows[0];
 
   const query = `
     UPDATE scheduled_tasks 
@@ -215,5 +322,12 @@ export const updateScheduledTask = catchAsync(async (req: Request, res: Response
     taskId
   ]);
 
-  res.status(200).json(new ApiResponse(200, updateRes.rows[0], 'Scheduled task updated successfully'));
+  const updatedTask = updateRes.rows[0];
+
+  // Dispatch notifications asynchronously on state transition
+  handleTaskNotificationDispatch(oldTask, updatedTask).catch(err => {
+    console.error("Error dispatching notification:", err);
+  });
+
+  res.status(200).json(new ApiResponse(200, updatedTask, 'Scheduled task updated successfully'));
 });

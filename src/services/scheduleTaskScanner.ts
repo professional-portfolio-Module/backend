@@ -14,11 +14,43 @@ export async function expirePastDueTasks(): Promise<number> {
       SET status = 'expired', updated_at = NOW()
       WHERE due_date < CURRENT_DATE
         AND status NOT IN ('completed', 'rejected', 'expired')
-      RETURNING task_id;
+      RETURNING task_id, scheduled_id;
     `;
     const res = await pool.query(query);
     if (res.rows.length > 0) {
       logger.info(`🚨 Automatically expired ${res.rows.length} past-due scheduled tasks.`);
+
+      // For each expired task, notify assigned technicians
+      for (const task of res.rows) {
+        try {
+          const infoRes = await pool.query(
+            `SELECT s.title, s.card_no FROM maintenance_schedule s WHERE s.schedule_id = $1`,
+            [task.scheduled_id]
+          );
+          if (infoRes.rows.length > 0) {
+            const info = infoRes.rows[0];
+            const techsRes = await pool.query(
+              `SELECT u.id FROM assignments assign 
+               JOIN users u ON assign.user_id = u.id 
+               WHERE assign.scheduled_id = $1 AND u.is_active = true`,
+              [task.scheduled_id]
+            );
+            for (const tech of techsRes.rows) {
+              await pool.query(
+                `INSERT INTO notifications (id, user_id, notification_type, title, content, read, created_at)
+                 VALUES (uuid_generate_v4(), $1, 'task_expired', $2, $3, false, NOW())`,
+                [
+                  tech.id,
+                  `Task Expired: ${info.title}`,
+                  `Your assigned task "${info.title}" for asset ${info.card_no} has expired because it was not completed before the due date.`
+                ]
+              );
+            }
+          }
+        } catch (innerErr) {
+          logger.error(`⚠️ Failed to dispatch expiration notification for task ${task.task_id}:`, innerErr);
+        }
+      }
     } else {
       logger.info('✅ No tasks were past their due date.');
     }
