@@ -4,6 +4,7 @@ import connectDB from './config/db.js';
 import { connectPostgres } from './config/postgres.js';
 import { startNotificationConsumer } from './services/notificationConsumer.js';
 import { redisService } from './services/redisService.js';
+import { startScheduleScanner } from './services/scheduleTaskScanner.js';
 import logger from './config/logger.js';
 
 const PORT = config.PORT;
@@ -19,6 +20,9 @@ const PORT = config.PORT;
     startNotificationConsumer().catch((err) => {
       logger.error('Failed to start NATS Notification Consumer:', err);
     });
+
+    // Start automatic maintenance schedule scanner
+    startScheduleScanner();
 
     const server = app.listen(PORT, () => {
       logger.info(`🚀 Server is running on port ${PORT}`);
