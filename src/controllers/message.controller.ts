@@ -4,6 +4,53 @@ import catchAsync from '../utils/catchAsync.js';
 import ApiResponse from '../utils/ApiResponse.js';
 import ApiError from '../utils/ApiError.js';
 
+// Registry for Server-Sent Events (SSE) clients
+export const sseClients = new Map<string, Response[]>();
+
+/**
+ * Establish a Server-Sent Events (SSE) stream for message updates
+ * GET /api/messages/stream?userId=...
+ */
+export const establishMessageStream = (req: Request, res: Response) => {
+  const { userId } = req.query;
+  if (!userId) {
+    res.status(400).json({ success: false, message: 'userId is required' });
+    return;
+  }
+
+  // Set headers for EventStream connection
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  });
+
+  // Periodically send heartbeat comments to keep the socket connection open
+  const heartbeat = setInterval(() => {
+    res.write(': keepalive\n\n');
+  }, 30000);
+
+  const uidStr = userId as string;
+  const clients = sseClients.get(uidStr) || [];
+  clients.push(res);
+  sseClients.set(uidStr, clients);
+
+  // Clean up client registration on disconnect
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    const active = sseClients.get(uidStr) || [];
+    const idx = active.indexOf(res);
+    if (idx > -1) {
+      active.splice(idx, 1);
+    }
+    if (active.length === 0) {
+      sseClients.delete(uidStr);
+    } else {
+      sseClients.set(uidStr, active);
+    }
+  });
+};
+
 /**
  * Send a new direct message
  * POST /api/messages
@@ -21,6 +68,22 @@ export const sendMessage = catchAsync(async (req: Request, res: Response) => {
     message,
     is_read: false
   });
+
+  // Notify receiver in real-time
+  const receiverClients = sseClients.get(receiver_id);
+  if (receiverClients) {
+    receiverClients.forEach(client => {
+      client.write(`data: ${JSON.stringify(newMessage)}\n\n`);
+    });
+  }
+
+  // Notify sender (for sync across multiple tabs/windows)
+  const senderClients = sseClients.get(sender_id);
+  if (senderClients) {
+    senderClients.forEach(client => {
+      client.write(`data: ${JSON.stringify(newMessage)}\n\n`);
+    });
+  }
 
   res.status(201).json(new ApiResponse(201, newMessage, 'Message sent successfully'));
 });
