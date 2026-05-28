@@ -161,6 +161,16 @@ export const getPendingTaskByAsset = catchAsync(async (req: Request, res: Respon
     return res.status(200).json(new ApiResponse(200, null, 'No pending scheduled tasks found for this asset (task expired)'));
   }
 
+  // Fetch assignments for this schedule
+  const assignmentsQuery = `
+    SELECT u.id as user_id, u.name, u.email
+    FROM assignments assign
+    JOIN users u ON assign.user_id = u.id
+    WHERE assign.scheduled_id = $1 AND u.is_active = true
+  `;
+  const assignmentsResult = await pool.query(assignmentsQuery, [task.scheduled_id]);
+  task.assigned_technicians = assignmentsResult.rows;
+
   res.status(200).json(new ApiResponse(200, task, 'Pending task fetched successfully'));
 });
 
