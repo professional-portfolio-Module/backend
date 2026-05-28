@@ -150,7 +150,18 @@ export const getPendingTaskByAsset = catchAsync(async (req: Request, res: Respon
     return res.status(200).json(new ApiResponse(200, null, 'No pending scheduled tasks found for this asset'));
   }
 
-  res.status(200).json(new ApiResponse(200, result.rows[0], 'Pending task fetched successfully'));
+  const task = result.rows[0];
+
+  // Dynamic Auto-Expiration: check if due_date has passed
+  if (task.due_date && new Date(task.due_date) < new Date(new Date().setHours(0,0,0,0))) {
+    await pool.query(
+      "UPDATE scheduled_tasks SET status = 'expired', updated_at = NOW() WHERE task_id = $1",
+      [task.task_id]
+    );
+    return res.status(200).json(new ApiResponse(200, null, 'No pending scheduled tasks found for this asset (task expired)'));
+  }
+
+  res.status(200).json(new ApiResponse(200, task, 'Pending task fetched successfully'));
 });
 
 /**
@@ -159,7 +170,7 @@ export const getPendingTaskByAsset = catchAsync(async (req: Request, res: Respon
  */
 export const updateScheduledTask = catchAsync(async (req: Request, res: Response) => {
   const { taskId } = req.params;
-  const { status, technician_remarks, attachment_url, done_by } = req.body;
+  const { status, technician_remarks, engineer_remarks, attachment_url, done_by, checked_by, priority } = req.body;
 
   // Verify task exists
   const checkRes = await pool.query('SELECT task_id FROM scheduled_tasks WHERE task_id = $1', [taskId]);
@@ -172,19 +183,25 @@ export const updateScheduledTask = catchAsync(async (req: Request, res: Response
     SET 
       status = COALESCE($1, status),
       technician_remarks = COALESCE($2, technician_remarks),
-      attachment_url = COALESCE($3, attachment_url),
-      done_by = COALESCE($4::uuid, done_by),
-      completed_at = CASE WHEN $1 = 'completed' OR $1 = 'under_review' THEN CURRENT_TIMESTAMP ELSE completed_at END,
+      engineer_remarks = COALESCE($3, engineer_remarks),
+      attachment_url = COALESCE($4, attachment_url),
+      done_by = COALESCE($5::uuid, done_by),
+      checked_by = COALESCE($6::uuid, checked_by),
+      priority = COALESCE($7, priority),
+      completed_at = CASE WHEN $1 IN ('completed', 'rejected') THEN CURRENT_TIMESTAMP ELSE completed_at END,
       updated_at = CURRENT_TIMESTAMP
-    WHERE task_id = $5
+    WHERE task_id = $8
     RETURNING *
   `;
 
   const updateRes = await pool.query(query, [
-    status,
-    technician_remarks,
-    attachment_url,
+    status || null,
+    technician_remarks || null,
+    engineer_remarks || null,
+    attachment_url || null,
     done_by || null,
+    checked_by || null,
+    priority || null,
     taskId
   ]);
 

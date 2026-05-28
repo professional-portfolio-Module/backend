@@ -3,11 +3,41 @@ import { notificationService } from './notificationService.js';
 import logger from '../config/logger.js';
 
 /**
+ * Scans for active scheduled tasks whose due_date has passed (due_date < CURRENT_DATE)
+ * and automatically transitions their status to 'expired'.
+ */
+export async function expirePastDueTasks(): Promise<number> {
+  logger.info('⏰ Scanning for expired scheduled tasks...');
+  try {
+    const query = `
+      UPDATE scheduled_tasks
+      SET status = 'expired', updated_at = NOW()
+      WHERE due_date < CURRENT_DATE
+        AND status NOT IN ('completed', 'rejected', 'expired')
+      RETURNING task_id;
+    `;
+    const res = await pool.query(query);
+    if (res.rows.length > 0) {
+      logger.info(`🚨 Automatically expired ${res.rows.length} past-due scheduled tasks.`);
+    } else {
+      logger.info('✅ No tasks were past their due date.');
+    }
+    return res.rows.length;
+  } catch (error) {
+    logger.error('❌ Failed to run auto-expiration check:', error);
+    return 0;
+  }
+}
+
+/**
  * Scans maintenance schedules that start within the next day (tomorrow or earlier)
  * and automatically generates pending tasks for them in the scheduled_tasks table.
  * It also notifies all assigned technicians via email and in-app notifications.
  */
 export async function scanSchedulesAndCreateTasks(): Promise<void> {
+  // First run auto-expiration check
+  await expirePastDueTasks();
+
   logger.info('🔍 Starting automated maintenance schedule scan...');
 
   const client = await pool.connect();
