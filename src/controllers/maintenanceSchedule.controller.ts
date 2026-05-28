@@ -128,25 +128,23 @@ export const createMaintenanceSchedule = catchAsync(async (req: Request, res: Re
   try {
     await client.query('BEGIN');
 
-    // 1. Resolve asset_id from card_no
-    const assetCheck = await client.query('SELECT id FROM assets WHERE card_no = $1 AND hotel_id = $2', [card_no, hotel_id]);
+    // 1. Verify asset exists for this card_no in the hotel
+    const assetCheck = await client.query('SELECT card_no FROM assets WHERE card_no = $1 AND hotel_id = $2', [card_no, hotel_id]);
     if (assetCheck.rows.length === 0) {
       throw new ApiError(404, `Asset with card number '${card_no}' not found in this hotel`);
     }
-    const asset_id = assetCheck.rows[0].id;
 
     // 2. Insert maintenance schedule
     const scheduleQuery = `
       INSERT INTO maintenance_schedule (
-        schedule_id, hotel_id, card_no, asset_id, month, week_no, start_date, end_date, title, default_description_manager, is_active, created_at, updated_at
+        schedule_id, hotel_id, card_no, month, week_no, start_date, end_date, title, default_description_manager, is_active, created_at, updated_at
       ) VALUES (
-        uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, true, NOW(), NOW()
+        uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, true, NOW(), NOW()
       ) RETURNING *
     `;
     const scheduleResult = await client.query(scheduleQuery, [
       hotel_id,
       card_no,
-      asset_id,
       month.toUpperCase().substring(0, 3), // Ensure short month name format, e.g. JAN, FEB
       parseInt(week_no, 10),
       start_date,
@@ -215,14 +213,12 @@ export const updateMaintenanceSchedule = catchAsync(async (req: Request, res: Re
 
     const currentSchedule = existingCheck.rows[0];
 
-    // 2. Resolve asset_id if card_no is changing
-    let asset_id = currentSchedule.asset_id;
+    // 2. Verify asset if card_no is changing
     if (card_no && card_no !== currentSchedule.card_no) {
-      const assetCheck = await client.query('SELECT id FROM assets WHERE card_no = $1 AND hotel_id = $2', [card_no, currentSchedule.hotel_id]);
+      const assetCheck = await client.query('SELECT card_no FROM assets WHERE card_no = $1 AND hotel_id = $2', [card_no, currentSchedule.hotel_id]);
       if (assetCheck.rows.length === 0) {
         throw new ApiError(404, `Asset with card number '${card_no}' not found`);
       }
-      asset_id = assetCheck.rows[0].id;
     }
 
     // 3. Update maintenance schedule
@@ -230,21 +226,19 @@ export const updateMaintenanceSchedule = catchAsync(async (req: Request, res: Re
       UPDATE maintenance_schedule
       SET 
         card_no = COALESCE($1, card_no),
-        asset_id = COALESCE($2, asset_id),
-        month = COALESCE($3, month),
-        week_no = COALESCE($4, week_no),
-        start_date = COALESCE($5, start_date),
-        end_date = COALESCE($6, end_date),
-        title = COALESCE($7, title),
-        default_description_manager = $8,
-        is_active = COALESCE($9, is_active),
+        month = COALESCE($2, month),
+        week_no = COALESCE($3, week_no),
+        start_date = COALESCE($4, start_date),
+        end_date = COALESCE($5, end_date),
+        title = COALESCE($6, title),
+        default_description_manager = $7,
+        is_active = COALESCE($8, is_active),
         updated_at = NOW()
-      WHERE schedule_id = $10
+      WHERE schedule_id = $9
       RETURNING *
     `;
     const scheduleResult = await client.query(updateQuery, [
       card_no || null,
-      asset_id || null,
       month ? month.toUpperCase().substring(0, 3) : null,
       week_no !== undefined ? parseInt(week_no, 10) : null,
       start_date || null,
