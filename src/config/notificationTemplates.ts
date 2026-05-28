@@ -53,7 +53,7 @@ export const templates: Record<NotificationTemplateType, NotificationTemplateCha
     },
     push: {
       alert: "🛠 Reminder: '{{task_name}}' at {{scheduled_time}} today.",
-      deepLink: "naita://tasks/{{task_id}}"
+      deepLink: "browns://tasks/{{task_id}}"
     }
   }
 };

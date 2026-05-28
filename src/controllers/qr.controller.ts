@@ -125,7 +125,7 @@ export const scanRedirect = catchAsync(async (req: Request, res: Response) => {
           <p>This physical QR sticker is successfully linked to this server, but no active target destination has been configured for this Asset Card No yet.</p>
           <div class="code">${escapeHtml(machineId)}</div>
           <p>Please use the <strong>/api/qr/update</strong> endpoint to configure a redirect target URL for this asset.</p>
-          <div class="footer">NAITA Dynamic QR Redirect System</div>
+          <div class="footer">Browns Hotels Dynamic QR Redirect System</div>
         </div>
       </body>
       </html>

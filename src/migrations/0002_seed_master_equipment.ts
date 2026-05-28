@@ -32,8 +32,8 @@ BEGIN
     -- Insert Default Users
     INSERT INTO users (hotel_id, name, email, password_hash, role, is_active)
     VALUES
-        (hotel_id_dolphin, 'Dolphin Admin', 'dolphin.admin@naita.lk', 'a109e36947ad56de1dca1cc49f0ef8ac9ad9a7b1aa0df41fb3c4cb73c1ff01ea', 'admin', true),
-        (hotel_id_dolphin, 'Dolphin Tech', 'dolphin.tech@naita.lk', 'a109e36947ad56de1dca1cc49f0ef8ac9ad9a7b1aa0df41fb3c4cb73c1ff01ea', 'technician', true);
+        (hotel_id_dolphin, 'Dolphin Admin', 'dolphin.admin@browns.lk', 'a109e36947ad56de1dca1cc49f0ef8ac9ad9a7b1aa0df41fb3c4cb73c1ff01ea', 'admin', true),
+        (hotel_id_dolphin, 'Dolphin Tech', 'dolphin.tech@browns.lk', 'a109e36947ad56de1dca1cc49f0ef8ac9ad9a7b1aa0df41fb3c4cb73c1ff01ea', 'technician', true);
 
     -- Insert Categories with Explicit UUIDs to match Batch inserts
     INSERT INTO equipment_categories (id, code, name) VALUES

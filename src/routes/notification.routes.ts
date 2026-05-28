@@ -25,7 +25,7 @@ router.post('/publish-test', catchAsync(async (req, res) => {
   // Standard sample data representing CMMS task reminder
   const defaultRecipient = {
     name: 'Adeepa Senavirathna',
-    email: 'adeepa@naita.lk',
+    email: 'adeepa@browns.lk',
     phone: '+94771234567',
     pushToken: 'ExponentPushToken[mock_technician_token_123]',
   };

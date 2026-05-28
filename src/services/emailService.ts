@@ -36,7 +36,7 @@ class EmailService {
    * Sends an email via configured SMTP or prints it to log if in Mock mode.
    */
   async sendEmail(options: EmailOptions): Promise<boolean> {
-    const from = process.env.SMTP_FROM || '"Hotel Maintenance" <maintenance@naita.lk>';
+    const from = process.env.SMTP_FROM || '"Hotel Maintenance" <maintenance@browns.lk>';
 
     if (this.isMockMode) {
       logger.info(`
