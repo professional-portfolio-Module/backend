@@ -19,6 +19,7 @@ interface Config {
   REDIS_PORT: number;
   REDIS_PASSWORD?: string;
   REDIS_TTL: number;
+  SENTRY_DSN?: string;
 }
 
 const config: Config = {
@@ -32,6 +33,7 @@ const config: Config = {
   REDIS_PORT: parseInt(process.env.REDIS_PORT || '6379', 10),
   REDIS_PASSWORD: process.env.REDIS_PASSWORD || undefined,
   REDIS_TTL: parseInt(process.env.REDIS_TTL || '300', 10),
+  SENTRY_DSN: process.env.SENTRY_DSN || undefined,
 };
 
 export default config;
