@@ -1,9 +1,9 @@
 import { rateLimit } from 'express-rate-limit';
 
-// Global rate limiter (Max 100 requests per 15 minutes)
+// Global rate limiter (Max 1500 requests per 15 minutes to support chat and dashboard updates)
 export const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 100,
+  limit: 1500,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: {
