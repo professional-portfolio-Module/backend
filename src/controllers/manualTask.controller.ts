@@ -96,6 +96,21 @@ export const createManualTask = catchAsync(async (req: Request, res: Response) =
     throw new ApiError(400, 'Hotel ID, Title, Assigned Technician, and Asset selection are required fields');
   }
 
+  // Restrict creation only to managers
+  if (!assigned_by) {
+    throw new ApiError(400, 'Creator user (assigned_by) is required to create a manual task');
+  }
+
+  const creatorQuery = await pool.query('SELECT role FROM users WHERE id = $1', [assigned_by]);
+  if (creatorQuery.rows.length === 0) {
+    throw new ApiError(404, 'Creator user (assigned_by) not found');
+  }
+
+  const creatorRole = creatorQuery.rows[0].role?.toLowerCase();
+  if (creatorRole !== 'manager') {
+    throw new ApiError(403, 'Only managers are allowed to create manual tasks');
+  }
+
   // Validate priority check constraint
   if (!['normal', 'emergency'].includes(priority)) {
     throw new ApiError(400, "Priority must be 'normal' or 'emergency'");
