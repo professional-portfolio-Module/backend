@@ -23,9 +23,7 @@ const errorHandler = (err: any, req: Request, res: Response, _next: NextFunction
     ...(config.NODE_ENV === 'development' && { stack: err.stack }),
   };
 
-  if (config.NODE_ENV === 'development') {
-    logger.error(err);
-  }
+  logger.error(err);
 
   res.status(statusCode || 500).send(response);
 };
