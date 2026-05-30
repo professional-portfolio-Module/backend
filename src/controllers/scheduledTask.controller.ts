@@ -32,6 +32,13 @@ export const handleTaskNotificationDispatch = async (oldTask: any, updatedTask: 
     `;
     const engineersRes = await pool.query(engineersQuery, [info.hotel_id]);
 
+    // Fetch managers at this hotel
+    const managersQuery = `
+      SELECT id FROM users 
+      WHERE hotel_id = $1 AND role = 'MANAGER' AND is_active = true
+    `;
+    const managersRes = await pool.query(managersQuery, [info.hotel_id]);
+
     // Fetch assigned technicians
     const techsQuery = `
       SELECT u.id 
@@ -43,6 +50,16 @@ export const handleTaskNotificationDispatch = async (oldTask: any, updatedTask: 
 
     // 1. Escalated to Emergency
     if (priorityChanged && updatedTask.priority === 'emergency') {
+      for (const mgr of managersRes.rows) {
+        await createNotificationHelper(
+          mgr.id,
+          'system',
+          `🚨 Emergency Escalation: ${info.title}`,
+          `Task "${info.title}" for asset ${info.card_no} has been escalated to EMERGENCY.`,
+          updatedTask.task_id,
+          'scheduled_task'
+        );
+      }
       for (const eng of engineersRes.rows) {
         await createNotificationHelper(
           eng.id,
@@ -56,16 +73,28 @@ export const handleTaskNotificationDispatch = async (oldTask: any, updatedTask: 
     }
 
     // 2. Completed
-    if (statusChanged && updatedTask.status === 'completed' && updatedTask.priority === 'emergency') {
-      for (const eng of engineersRes.rows) {
+    if (statusChanged && updatedTask.status === 'completed') {
+      for (const mgr of managersRes.rows) {
         await createNotificationHelper(
-          eng.id,
+          mgr.id,
           'task_completed',
           `Task Completed: ${info.title}`,
           `Scheduled task "${info.title}" for asset ${info.card_no} has been marked as completed.`,
           updatedTask.task_id,
           'scheduled_task'
         );
+      }
+      if (updatedTask.priority === 'emergency') {
+        for (const eng of engineersRes.rows) {
+          await createNotificationHelper(
+            eng.id,
+            'task_completed',
+            `Task Completed: ${info.title}`,
+            `Scheduled task "${info.title}" for asset ${info.card_no} has been marked as completed.`,
+            updatedTask.task_id,
+            'scheduled_task'
+          );
+        }
       }
     }
 

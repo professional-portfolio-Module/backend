@@ -4,6 +4,7 @@ import ApiResponse from '../utils/ApiResponse.js';
 import ApiError from '../utils/ApiError.js';
 import catchAsync from '../utils/catchAsync.js';
 import { redisService } from '../services/redisService.js';
+import { createNotificationHelper } from './notification.controller.js';
 
 export const getManualTasks = catchAsync(async (req: Request, res: Response) => {
   const { hotel_id, status, priority, assigned_to, card_no, search } = req.query;
@@ -149,6 +150,19 @@ export const createManualTask = catchAsync(async (req: Request, res: Response) =
 
   await redisService.delPattern('manualTasks:list:*');
 
+  // Notify the assigned technician
+  const createdTask = result.rows[0];
+  if (createdTask && createdTask.assigned_to) {
+    createNotificationHelper(
+      createdTask.assigned_to,
+      'task_assigned',
+      `New Task Assigned: ${createdTask.title}`,
+      `You have been assigned a new manual task: "${createdTask.title}".`,
+      createdTask.manual_task_id,
+      'manual_task'
+    ).catch(err => console.error('Failed to dispatch task assignment notification:', err));
+  }
+
   res.status(201).json(
     new ApiResponse(201, result.rows[0], 'Manual task created successfully')
   );
@@ -267,10 +281,130 @@ export const updateManualTask = catchAsync(async (req: Request, res: Response) =
 
   await redisService.delPattern('manualTasks:list:*');
 
+  // Dispatch notifications asynchronously
+  handleManualTaskNotificationDispatch(existing.rows[0], result.rows[0]).catch(err => 
+    console.error('Failed to dispatch manual task state notifications:', err)
+  );
+
   res.status(200).json(
     new ApiResponse(200, result.rows[0], 'Manual task updated successfully')
   );
 });
+
+const handleManualTaskNotificationDispatch = async (oldTask: any, updatedTask: any) => {
+  try {
+    const statusChanged = oldTask.status !== updatedTask.status;
+    const priorityChanged = oldTask.priority !== updatedTask.priority;
+
+    if (!statusChanged && !priorityChanged) {
+      return;
+    }
+
+    // Fetch managers and engineers at this hotel
+    const staffQuery = `
+      SELECT id, role FROM users 
+      WHERE hotel_id = $1 AND role IN ('MANAGER', 'ENGINEER') AND is_active = true
+    `;
+    const staffRes = await pool.query(staffQuery, [updatedTask.hotel_id]);
+    const managers = staffRes.rows.filter((u: any) => u.role === 'MANAGER');
+    const engineers = staffRes.rows.filter((u: any) => u.role === 'ENGINEER');
+
+    const techId = updatedTask.assigned_to;
+
+    // 1. Escalated to Emergency
+    if (priorityChanged && updatedTask.priority === 'emergency') {
+      for (const mgr of managers) {
+        await createNotificationHelper(
+          mgr.id,
+          'system',
+          `🚨 Emergency Escalation: ${updatedTask.title}`,
+          `Manual task "${updatedTask.title}" for asset ${updatedTask.card_no} has been escalated to EMERGENCY.`,
+          updatedTask.manual_task_id,
+          'manual_task'
+        );
+      }
+      for (const eng of engineers) {
+        await createNotificationHelper(
+          eng.id,
+          'system',
+          `🚨 Emergency Escalation: ${updatedTask.title}`,
+          `Manual task "${updatedTask.title}" for asset ${updatedTask.card_no} has been escalated to EMERGENCY.`,
+          updatedTask.manual_task_id,
+          'manual_task'
+        );
+      }
+    }
+
+    // 2. Completed
+    if (statusChanged && updatedTask.status === 'completed') {
+      for (const mgr of managers) {
+        await createNotificationHelper(
+          mgr.id,
+          'task_completed',
+          `Task Completed: ${updatedTask.title}`,
+          `Manual task "${updatedTask.title}" for asset ${updatedTask.card_no} has been marked as completed.`,
+          updatedTask.manual_task_id,
+          'manual_task'
+        );
+      }
+      if (updatedTask.priority === 'emergency') {
+        for (const eng of engineers) {
+          await createNotificationHelper(
+            eng.id,
+            'task_completed',
+            `Task Completed: ${updatedTask.title}`,
+            `Manual task "${updatedTask.title}" for asset ${updatedTask.card_no} has been marked as completed.`,
+            updatedTask.manual_task_id,
+            'manual_task'
+          );
+        }
+      }
+    }
+
+    // 3. Under Review
+    if (statusChanged && updatedTask.status === 'under_review') {
+      if (techId) {
+        await createNotificationHelper(
+          techId,
+          'system',
+          `Task Under Review: ${updatedTask.title}`,
+          `Manual task "${updatedTask.title}" for asset ${updatedTask.card_no} is now under review.`,
+          updatedTask.manual_task_id,
+          'manual_task'
+        );
+      }
+      if (updatedTask.priority === 'emergency') {
+        for (const eng of engineers) {
+          await createNotificationHelper(
+            eng.id,
+            'system',
+            `🚨 Emergency Task Under Review: ${updatedTask.title}`,
+            `Emergency manual task "${updatedTask.title}" for asset ${updatedTask.card_no} is ready for review.`,
+            updatedTask.manual_task_id,
+            'manual_task'
+          );
+        }
+      }
+    }
+
+    // 4. Rejected
+    if (statusChanged && updatedTask.status === 'rejected') {
+      if (techId) {
+        await createNotificationHelper(
+          techId,
+          'system',
+          `Task Rejected: ${updatedTask.title}`,
+          `Manual task "${updatedTask.title}" for asset ${updatedTask.card_no} was reviewed and rejected.`,
+          updatedTask.manual_task_id,
+          'manual_task'
+        );
+      }
+    }
+
+  } catch (err) {
+    console.error('Failed to dispatch manual task state change notifications:', err);
+  }
+};
 
 export const deleteManualTask = catchAsync(async (req: Request, res: Response) => {
   const { id } = req.params;
