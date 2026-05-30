@@ -56,7 +56,7 @@ export const handleTaskNotificationDispatch = async (oldTask: any, updatedTask: 
     }
 
     // 2. Completed
-    if (statusChanged && updatedTask.status === 'completed') {
+    if (statusChanged && updatedTask.status === 'completed' && updatedTask.priority === 'emergency') {
       for (const eng of engineersRes.rows) {
         await createNotificationHelper(
           eng.id,
@@ -80,6 +80,18 @@ export const handleTaskNotificationDispatch = async (oldTask: any, updatedTask: 
           updatedTask.task_id,
           'scheduled_task'
         );
+      }
+      if (updatedTask.priority === 'emergency') {
+        for (const eng of engineersRes.rows) {
+          await createNotificationHelper(
+            eng.id,
+            'system',
+            `🚨 Emergency Task Under Review: ${info.title}`,
+            `Emergency task "${info.title}" for asset ${info.card_no} is ready for review.`,
+            updatedTask.task_id,
+            'scheduled_task'
+          );
+        }
       }
     }
 
