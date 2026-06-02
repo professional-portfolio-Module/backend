@@ -74,12 +74,18 @@ export const handleTaskNotificationDispatch = async (oldTask: any, updatedTask: 
 
     // 2. Completed
     if (statusChanged && updatedTask.status === 'completed') {
+      const isLateCompletion = updatedTask.was_expired === true;
+      const completedLabel = isLateCompletion ? 'Completed Late' : 'Completed';
+      const completedContent = isLateCompletion
+        ? `Scheduled task "${info.title}" for asset ${info.card_no} was completed LATE (after expiry). Remarks: ${updatedTask.technician_remarks || updatedTask.engineer_remarks || 'N/A'}`
+        : `Scheduled task "${info.title}" for asset ${info.card_no} has been marked as completed.`;
+
       for (const mgr of managersRes.rows) {
         await createNotificationHelper(
           mgr.id,
           'task_completed',
-          `Task Completed: ${info.title}`,
-          `Scheduled task "${info.title}" for asset ${info.card_no} has been marked as completed.`,
+          `Task ${completedLabel}: ${info.title}`,
+          completedContent,
           updatedTask.task_id,
           'scheduled_task'
         );
@@ -89,8 +95,8 @@ export const handleTaskNotificationDispatch = async (oldTask: any, updatedTask: 
           await createNotificationHelper(
             eng.id,
             'task_completed',
-            `Task Completed: ${info.title}`,
-            `Scheduled task "${info.title}" for asset ${info.card_no} has been marked as completed.`,
+            `Task ${completedLabel}: ${info.title}`,
+            completedContent,
             updatedTask.task_id,
             'scheduled_task'
           );
@@ -186,6 +192,7 @@ export const getScheduledTasks = catchAsync(async (req: Request, res: Response) 
       t.technician_remarks,
       t.engineer_remarks,
       t.due_date,
+      t.was_expired,
       s.title as schedule_title,
       s.card_no as asset_card_no,
       a.description as asset_description,
@@ -285,6 +292,7 @@ export const getPendingTaskByAsset = catchAsync(async (req: Request, res: Respon
       t.technician_remarks,
       t.engineer_remarks,
       t.due_date,
+      t.was_expired,
       s.title as schedule_title,
       s.card_no as asset_card_no,
       a.description as asset_description,
@@ -346,6 +354,29 @@ export const updateScheduledTask = catchAsync(async (req: Request, res: Response
   }
   const oldTask = checkRes.rows[0];
 
+  // --- Expired task accountability logic ---
+  const isCurrentlyExpired = oldTask.status === 'expired';
+
+  if (isCurrentlyExpired) {
+    // Block escalation / priority changes on expired tasks (no longer operationally relevant)
+    if (priority && priority !== oldTask.priority) {
+      throw new ApiError(400, 'Cannot change priority on an expired task. You may only complete it as a late completion.');
+    }
+
+    // Only allow transitioning to 'completed' (late completion) or adding remarks
+    if (status && status !== 'completed' && status !== 'in-progress') {
+      throw new ApiError(400, `Expired tasks can only be completed as a late completion. Transition to '${status}' is not allowed.`);
+    }
+
+    // Require remarks for late completions
+    if (status === 'completed' && !technician_remarks && !engineer_remarks) {
+      throw new ApiError(400, 'Remarks are required when completing an expired task. Please explain why the task was completed late.');
+    }
+  }
+
+  // Determine if this is a late completion (expired -> completed)
+  const isLateCompletion = isCurrentlyExpired && status === 'completed';
+
   const query = `
     UPDATE scheduled_tasks 
     SET 
@@ -357,6 +388,7 @@ export const updateScheduledTask = catchAsync(async (req: Request, res: Response
       checked_by = COALESCE($6::uuid, checked_by),
       priority = COALESCE($7, priority),
       completed_at = CASE WHEN $1 IN ('completed', 'rejected') THEN CURRENT_TIMESTAMP ELSE completed_at END,
+      was_expired = CASE WHEN $9 = true THEN true ELSE COALESCE(was_expired, false) END,
       updated_at = CURRENT_TIMESTAMP
     WHERE task_id = $8
     RETURNING *
@@ -370,7 +402,8 @@ export const updateScheduledTask = catchAsync(async (req: Request, res: Response
     done_by || null,
     checked_by || null,
     priority || null,
-    taskId
+    taskId,
+    isLateCompletion
   ]);
 
   const updatedTask = updateRes.rows[0];

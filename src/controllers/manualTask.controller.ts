@@ -211,6 +211,29 @@ export const updateManualTask = catchAsync(async (req: Request, res: Response) =
     throw new ApiError(400, `Status must be one of: ${allowedStatuses.join(', ')}`);
   }
 
+  // --- Expired task accountability logic ---
+  const isCurrentlyExpired = existing.rows[0].status === 'expired';
+
+  if (isCurrentlyExpired) {
+    // Block escalation / priority changes on expired tasks
+    if (priority && priority !== existing.rows[0].priority) {
+      throw new ApiError(400, 'Cannot change priority on an expired task. You may only complete it as a late completion.');
+    }
+
+    // Only allow transitioning to 'completed' or 'in-progress'
+    if (status && status !== 'completed' && status !== 'in-progress') {
+      throw new ApiError(400, `Expired tasks can only be completed as a late completion. Transition to '${status}' is not allowed.`);
+    }
+
+    // Require remarks for late completions
+    if (status === 'completed' && !tech_remarks && !eng_remarks) {
+      throw new ApiError(400, 'Remarks are required when completing an expired task. Please explain why the task was completed late.');
+    }
+  }
+
+  // Determine if this is a late completion (expired -> completed)
+  const isLateCompletion = isCurrentlyExpired && status === 'completed';
+
   let query = 'UPDATE manual_task SET';
   const params: any[] = [];
   let paramIndex = 1;
@@ -266,6 +289,11 @@ export const updateManualTask = catchAsync(async (req: Request, res: Response) =
   if (eng_remarks !== undefined) {
     query += ` eng_remarks = $${paramIndex++},`;
     params.push(eng_remarks || null);
+  }
+
+  // Set was_expired flag for late completions
+  if (isLateCompletion) {
+    query += ` was_expired = true,`;
   }
 
   if (params.length === 0) {
@@ -337,12 +365,18 @@ const handleManualTaskNotificationDispatch = async (oldTask: any, updatedTask: a
 
     // 2. Completed
     if (statusChanged && updatedTask.status === 'completed') {
+      const isLateCompletion = updatedTask.was_expired === true;
+      const completedLabel = isLateCompletion ? 'Completed Late' : 'Completed';
+      const completedContent = isLateCompletion
+        ? `Manual task "${updatedTask.title}" for asset ${updatedTask.card_no} was completed LATE (after expiry). Remarks: ${updatedTask.tech_remarks || updatedTask.eng_remarks || 'N/A'}`
+        : `Manual task "${updatedTask.title}" for asset ${updatedTask.card_no} has been marked as completed.`;
+
       for (const mgr of managers) {
         await createNotificationHelper(
           mgr.id,
           'task_completed',
-          `Task Completed: ${updatedTask.title}`,
-          `Manual task "${updatedTask.title}" for asset ${updatedTask.card_no} has been marked as completed.`,
+          `Task ${completedLabel}: ${updatedTask.title}`,
+          completedContent,
           updatedTask.manual_task_id,
           'manual_task'
         );
@@ -352,8 +386,8 @@ const handleManualTaskNotificationDispatch = async (oldTask: any, updatedTask: a
           await createNotificationHelper(
             eng.id,
             'task_completed',
-            `Task Completed: ${updatedTask.title}`,
-            `Manual task "${updatedTask.title}" for asset ${updatedTask.card_no} has been marked as completed.`,
+            `Task ${completedLabel}: ${updatedTask.title}`,
+            completedContent,
             updatedTask.manual_task_id,
             'manual_task'
           );

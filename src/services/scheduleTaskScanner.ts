@@ -1,5 +1,6 @@
 import { pool } from '../config/postgres.js';
 import { notificationService } from './notificationService.js';
+import { redisService } from './redisService.js';
 import logger from '../config/logger.js';
 
 /**
@@ -64,13 +65,66 @@ export async function expirePastDueTasks(): Promise<number> {
 }
 
 /**
+ * Scans for active manual tasks whose due_date has passed (due_date < CURRENT_DATE)
+ * and automatically transitions their status to 'expired'.
+ */
+export async function expirePastDueManualTasks(): Promise<number> {
+  logger.info('⏰ Scanning for expired manual tasks...');
+  try {
+    const query = `
+      UPDATE manual_task
+      SET status = 'expired'
+      WHERE due_date < CURRENT_DATE
+        AND status NOT IN ('completed', 'rejected', 'expired')
+      RETURNING manual_task_id, title, assigned_to, card_no;
+    `;
+    const res = await pool.query(query);
+    if (res.rows.length > 0) {
+      logger.info(`🚨 Automatically expired ${res.rows.length} past-due manual tasks.`);
+
+      // Clear the Redis cache for manual tasks
+      await redisService.delPattern('manualTasks:list:*');
+
+      // For each expired task, notify the assigned technician
+      for (const task of res.rows) {
+        try {
+          if (task.assigned_to) {
+            await pool.query(
+              `INSERT INTO notifications (id, user_id, notification_type, title, content, read, created_at, entity_id, entity_type)
+               VALUES (uuid_generate_v4(), $1, 'task_expired', $2, $3, false, NOW(), $4, $5)`,
+              [
+                task.assigned_to,
+                `Task Expired: ${task.title}`,
+                `Your assigned manual task "${task.title}" for asset ${task.card_no} has expired because it was not completed before the due date.`,
+                task.manual_task_id,
+                'manual_task'
+              ]
+            );
+          }
+        } catch (innerErr) {
+          logger.error(`⚠️ Failed to dispatch expiration notification for manual task ${task.manual_task_id}:`, innerErr);
+        }
+      }
+    } else {
+      logger.info('✅ No manual tasks were past their due date.');
+    }
+    return res.rows.length;
+  } catch (error) {
+    logger.error('❌ Failed to run manual task auto-expiration check:', error);
+    return 0;
+  }
+}
+
+/**
  * Scans maintenance schedules that start within the next day (tomorrow or earlier)
  * and automatically generates pending tasks for them in the scheduled_tasks table.
  * It also notifies all assigned technicians via email and in-app notifications.
  */
 export async function scanSchedulesAndCreateTasks(): Promise<void> {
-  // First run auto-expiration check
+  // Run auto-expiration check for scheduled tasks
   await expirePastDueTasks();
+  // Run auto-expiration check for manual tasks
+  await expirePastDueManualTasks();
 
   logger.info('🔍 Starting automated maintenance schedule scan...');
 
