@@ -12,6 +12,7 @@ import manualTaskRoutes from './manualTask.routes.js';
 import maintenanceScheduleRoutes from './maintenanceSchedule.routes.js';
 import scheduledTaskRoutes from './scheduledTask.routes.js';
 import systemRoutes from './system.routes.js';
+import technicianReportRoutes from './technicianReport.routes.js';
 
 const router = express.Router();
 
@@ -67,6 +68,10 @@ const defaultRoutes = [
   {
     path: '/scheduled-tasks',
     route: scheduledTaskRoutes,
+  },
+  {
+    path: '/technician-reports',
+    route: technicianReportRoutes,
   },
 ];
 
