@@ -116,6 +116,51 @@ export async function expirePastDueManualTasks(): Promise<number> {
 }
 
 /**
+ * Cleans up photo evidence references:
+ * - Removes non-emergency photo evidence after 1 month.
+ * - Removes emergency photo evidence after 6 months.
+ */
+export async function cleanupOldPhotoEvidence(): Promise<void> {
+  logger.info('🧹 Running database cleanup for old photo evidence references...');
+  try {
+    const scheduledRes = await pool.query(`
+      UPDATE scheduled_tasks
+      SET attachment_url = NULL, updated_at = NOW()
+      WHERE attachment_url IS NOT NULL
+        AND (
+          (priority != 'emergency' AND created_at < NOW() - INTERVAL '1 month')
+          OR (priority = 'emergency' AND created_at < NOW() - INTERVAL '6 months')
+        );
+    `);
+    
+    const manualRes = await pool.query(`
+      UPDATE manual_task
+      SET attachment_url = NULL
+      WHERE attachment_url IS NOT NULL
+        AND (
+          (priority != 'emergency' AND created_at < NOW() - INTERVAL '1 month')
+          OR (priority = 'emergency' AND created_at < NOW() - INTERVAL '6 months')
+        );
+    `);
+
+    const scheduledCount = scheduledRes.rowCount ?? 0;
+    const manualCount = manualRes.rowCount ?? 0;
+
+    if (scheduledCount > 0 || manualCount > 0) {
+      logger.info(`🧹 Cleared old photo evidence for ${scheduledCount} scheduled tasks and ${manualCount} manual tasks.`);
+      // Clear manual tasks cache
+      if (manualCount > 0) {
+        await redisService.delPattern('manualTasks:list:*');
+      }
+    } else {
+      logger.info('✅ No old photo evidence needed clearing.');
+    }
+  } catch (error) {
+    logger.error('❌ Failed to run photo evidence cleanup:', error);
+  }
+}
+
+/**
  * Scans maintenance schedules that start within the next day (tomorrow or earlier)
  * and automatically generates pending tasks for them in the scheduled_tasks table.
  * It also notifies all assigned technicians via email and in-app notifications.
@@ -139,6 +184,7 @@ export async function scanSchedulesAndCreateTasks(): Promise<void> {
     // Solution 2: Run auto-expiration check even when task generation is paused to keep statuses accurate
     await expirePastDueTasks();
     await expirePastDueManualTasks();
+    await cleanupOldPhotoEvidence();
     return;
   }
 
@@ -163,6 +209,8 @@ export async function scanSchedulesAndCreateTasks(): Promise<void> {
   await expirePastDueTasks();
   // Run auto-expiration check for manual tasks
   await expirePastDueManualTasks();
+  // Clean up old photo evidence references (> 1 month, non-emergency)
+  await cleanupOldPhotoEvidence();
 
   logger.info('🔍 Starting automated maintenance schedule scan...');
 
