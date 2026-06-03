@@ -121,6 +121,13 @@ export async function expirePastDueManualTasks(): Promise<number> {
  * It also notifies all assigned technicians via email and in-app notifications.
  */
 export async function scanSchedulesAndCreateTasks(): Promise<void> {
+  // Check if automated task scanner is paused by admin
+  const isPaused = await redisService.get('system:task_generation:paused');
+  if (isPaused === 'true') {
+    logger.info('⏸️ Automated schedule scan skipped (paused by administrator).');
+    return;
+  }
+
   // Run auto-expiration check for scheduled tasks
   await expirePastDueTasks();
   // Run auto-expiration check for manual tasks

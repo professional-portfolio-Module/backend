@@ -4,6 +4,7 @@ import ApiResponse from '../utils/ApiResponse.js';
 import ApiError from '../utils/ApiError.js';
 import catchAsync from '../utils/catchAsync.js';
 import { createNotificationHelper } from './notification.controller.js';
+import { redisService } from '../services/redisService.js';
 
 // Helper to handle sending notifications on scheduled task state transitions
 export const handleTaskNotificationDispatch = async (oldTask: any, updatedTask: any) => {
@@ -415,3 +416,39 @@ export const updateScheduledTask = catchAsync(async (req: Request, res: Response
 
   res.status(200).json(new ApiResponse(200, updatedTask, 'Scheduled task updated successfully'));
 });
+
+/**
+ * GET /api/scheduled-tasks/scanner-status
+ * Returns the status of the automated task scanner (paused or active).
+ */
+export const getScannerStatus = catchAsync(async (req: Request, res: Response) => {
+  const isPaused = await redisService.get('system:task_generation:paused');
+  res.status(200).json(
+    new ApiResponse(200, { paused: isPaused === 'true' }, 'Scanner status fetched successfully')
+  );
+});
+
+/**
+ * POST /api/scheduled-tasks/scanner-toggle
+ * Toggles the automated task scanner on or off.
+ */
+export const toggleScanner = catchAsync(async (req: Request, res: Response) => {
+  const { paused } = req.body;
+
+  if (typeof paused !== 'boolean') {
+    throw new ApiError(400, 'paused field must be a boolean');
+  }
+
+  // Set the key in Redis with a 1-year TTL (effectively persistent toggle)
+  const ONE_YEAR_IN_SECONDS = 365 * 24 * 60 * 60;
+  await redisService.set('system:task_generation:paused', paused ? 'true' : 'false', ONE_YEAR_IN_SECONDS);
+
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      { paused },
+      `Automated task generation has been successfully ${paused ? 'paused' : 'resumed'}`
+    )
+  );
+});
+
