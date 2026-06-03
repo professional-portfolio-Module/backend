@@ -2,6 +2,8 @@ import { pool } from '../config/postgres.js';
 import { notificationService } from './notificationService.js';
 import { redisService } from './redisService.js';
 import logger from '../config/logger.js';
+import fs from 'fs';
+import path from 'path';
 
 /**
  * Scans for active scheduled tasks whose due_date has passed (due_date < CURRENT_DATE)
@@ -119,10 +121,63 @@ export async function expirePastDueManualTasks(): Promise<number> {
  * Cleans up photo evidence references:
  * - Removes non-emergency photo evidence after 1 month.
  * - Removes emergency photo evidence after 6 months.
+ * - Deletes the files from Cloudinary storage before clearing database links.
  */
 export async function cleanupOldPhotoEvidence(): Promise<void> {
   logger.info('🧹 Running database cleanup for old photo evidence references...');
   try {
+    // 1. Fetch URLs to delete for scheduled tasks
+    const scheduledUrlsRes = await pool.query(`
+      SELECT attachment_url 
+      FROM scheduled_tasks
+      WHERE attachment_url IS NOT NULL
+        AND (
+          (priority != 'emergency' AND created_at < NOW() - INTERVAL '1 month')
+          OR (priority = 'emergency' AND created_at < NOW() - INTERVAL '6 months')
+        );
+    `);
+    
+    // 2. Fetch URLs to delete for manual tasks
+    const manualUrlsRes = await pool.query(`
+      SELECT attachment_url 
+      FROM manual_task
+      WHERE attachment_url IS NOT NULL
+        AND (
+          (priority != 'emergency' AND created_at < NOW() - INTERVAL '1 month')
+          OR (priority = 'emergency' AND created_at < NOW() - INTERVAL '6 months')
+        );
+    `);
+
+    // Combine URLs and filter out falsy values
+    const urlsToDelete: string[] = [
+      ...scheduledUrlsRes.rows.map(r => r.attachment_url),
+      ...manualUrlsRes.rows.map(r => r.attachment_url)
+    ].filter(Boolean);
+
+    if (urlsToDelete.length > 0) {
+      logger.info(`🧹 Found ${urlsToDelete.length} images to clear.`);
+      const uploadsDir = path.resolve(process.cwd(), 'uploads');
+      
+      for (const url of urlsToDelete) {
+        // Try local VM file deletion if using self-hosted VM folder storage
+        if (url.includes('/api/uploads/')) {
+          const filename = url.split('/api/uploads/').pop();
+          if (filename) {
+            const localPath = path.join(uploadsDir, filename);
+            try {
+              if (fs.existsSync(localPath)) {
+                fs.unlinkSync(localPath);
+                logger.info(`🗑️ Deleted local VM photo evidence file: ${filename}`);
+              }
+            } catch (err) {
+              logger.error(`❌ Failed to delete local photo evidence file (${filename}):`, err);
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Update database references
     const scheduledRes = await pool.query(`
       UPDATE scheduled_tasks
       SET attachment_url = NULL, updated_at = NOW()
