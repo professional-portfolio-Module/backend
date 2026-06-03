@@ -19,6 +19,7 @@ import indexRoutes from './routes/index.routes.js';
 // Import middleware
 import { errorHandler, notFoundHandler } from './middleware/error.middleware.js';
 import { globalLimiter } from './middleware/security.middleware.js';
+import { checkMaintenanceMode } from './middleware/maintenance.middleware.js';
 import logger from './config/logger.js';
 
 const app = express();
@@ -55,6 +56,7 @@ app.use('/api', globalLimiter);
 // ---------------------
 // Routes
 // ---------------------
+app.use('/api', checkMaintenanceMode);
 app.use('/api', indexRoutes);
 
 // ---------------------

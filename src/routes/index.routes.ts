@@ -11,10 +11,15 @@ import messageRoutes from './message.routes.js';
 import manualTaskRoutes from './manualTask.routes.js';
 import maintenanceScheduleRoutes from './maintenanceSchedule.routes.js';
 import scheduledTaskRoutes from './scheduledTask.routes.js';
+import systemRoutes from './system.routes.js';
 
 const router = express.Router();
 
 const defaultRoutes = [
+  {
+    path: '/system',
+    route: systemRoutes,
+  },
   {
     path: '/health',
     route: healthRoutes,
