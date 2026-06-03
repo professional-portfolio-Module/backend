@@ -163,6 +163,31 @@ export const createManualTask = catchAsync(async (req: Request, res: Response) =
     ).catch(err => console.error('Failed to dispatch task assignment notification:', err));
   }
 
+  // Notify managers and engineers if this is an emergency task on creation
+  if (createdTask && createdTask.priority === 'emergency') {
+    (async () => {
+      try {
+        const staffQuery = `
+          SELECT id, role FROM users 
+          WHERE hotel_id = $1 AND role IN ('MANAGER', 'ENGINEER') AND is_active = true
+        `;
+        const staffRes = await pool.query(staffQuery, [hotel_id]);
+        for (const user of staffRes.rows) {
+          await createNotificationHelper(
+            user.id,
+            'system',
+            `🚨 Emergency Task Created: ${createdTask.title}`,
+            `A new manual task "${createdTask.title}" has been created with EMERGENCY priority.`,
+            createdTask.manual_task_id,
+            'manual_task'
+          );
+        }
+      } catch (err) {
+        console.error('Failed to dispatch emergency task creation notifications:', err);
+      }
+    })();
+  }
+
   res.status(201).json(
     new ApiResponse(201, result.rows[0], 'Manual task created successfully')
   );
