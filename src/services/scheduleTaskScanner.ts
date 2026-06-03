@@ -124,9 +124,39 @@ export async function scanSchedulesAndCreateTasks(): Promise<void> {
   // Check if automated task scanner is paused or system is in maintenance mode
   const isPaused = await redisService.get('system:task_generation:paused');
   const isMaintenance = await redisService.get('system:maintenance_mode');
+  
   if (isPaused === 'true' || isMaintenance === 'true') {
+    // Record when the pause started if not already recorded
+    const pausedAtExists = await redisService.get('system:task_generation:paused_at');
+    if (!pausedAtExists) {
+      const ONE_YEAR_IN_SECONDS = 365 * 24 * 60 * 60;
+      await redisService.set('system:task_generation:paused_at', new Date().toISOString(), ONE_YEAR_IN_SECONDS);
+      logger.info('⏸️ Recorded pause start timestamp in Redis.');
+    }
+    
     logger.info('⏸️ Automated schedule scan skipped (paused by administrator or system is in maintenance mode).');
+    
+    // Solution 2: Run auto-expiration check even when task generation is paused to keep statuses accurate
+    await expirePastDueTasks();
+    await expirePastDueManualTasks();
     return;
+  }
+
+  // Solution 1: Dynamic Lookback Window calculation when resuming
+  let lookbackDays = 7;
+  const pausedAtStr = await redisService.get('system:task_generation:paused_at');
+  if (pausedAtStr) {
+    try {
+      const pausedTime = new Date(pausedAtStr).getTime();
+      const nowTime = new Date().getTime();
+      const diffDays = Math.ceil((nowTime - pausedTime) / (1000 * 60 * 60 * 24));
+      if (diffDays > 7) {
+        lookbackDays = diffDays + 1; // dynamically cover the full duration of pause
+        logger.info(`🔄 Resuming task generation after long pause (${diffDays} days). Dynamically expanding lookback window to ${lookbackDays} days.`);
+      }
+    } catch (err) {
+      logger.error('⚠️ Failed to calculate dynamic lookback window:', err);
+    }
   }
 
   // Run auto-expiration check for scheduled tasks
@@ -135,6 +165,16 @@ export async function scanSchedulesAndCreateTasks(): Promise<void> {
   await expirePastDueManualTasks();
 
   logger.info('🔍 Starting automated maintenance schedule scan...');
+
+  // Map to hold notifications to prevent spamming technicians during backlog runs
+  // Key: technician userId, Value: { recipient details, list of tasks }
+  const consolidatedNotifications = new Map<
+    string,
+    {
+      recipient: { name: string; email: string; phone?: string };
+      tasks: Array<{ title: string; card_no: string; scheduled_time: string; task_id: string }>;
+    }
+  >();
 
   const client = await pool.connect();
   try {
@@ -156,19 +196,24 @@ export async function scanSchedulesAndCreateTasks(): Promise<void> {
       LEFT JOIN assets a ON s.card_no = a.card_no
       WHERE s.is_active = true
         AND s.start_date <= CURRENT_DATE + INTERVAL '1 day'
-        AND s.start_date >= CURRENT_DATE - INTERVAL '7 days'
+        AND s.start_date >= CURRENT_DATE - ($1::text || ' day')::INTERVAL
         AND NOT EXISTS (
           SELECT 1 
           FROM scheduled_tasks t 
           WHERE t.scheduled_id = s.schedule_id
         )
     `;
-    const schedulesResult = await client.query(schedulesQuery);
+    const schedulesResult = await client.query(schedulesQuery, [lookbackDays]);
     const schedulesToProcess = schedulesResult.rows;
 
     if (schedulesToProcess.length === 0) {
       logger.info('✅ No new schedules require task generation at this time.');
       await client.query('COMMIT');
+      
+      // Clean up paused timestamp now that catch-up check successfully found nothing
+      if (pausedAtStr) {
+        await redisService.del('system:task_generation:paused_at');
+      }
       return;
     }
 
@@ -272,32 +317,76 @@ export async function scanSchedulesAndCreateTasks(): Promise<void> {
           newTaskId
         ]);
 
-        // 5. Send Email and other notifications via NotificationService
-        try {
-          await notificationService.sendNotification({
-            recipient: {
-              name,
-              email,
-              phone: mobilenumber || undefined
-            },
-            templateType: 'maintenance_reminder',
-            variables: {
-              task_name: title,
-              machine_name: card_no,
-              scheduled_time: new Date(start_date).toLocaleString(),
-              scheduled_date: new Date(start_date).toLocaleDateString(),
-              task_id: newTaskId
-            },
-            channels: email ? ['email'] : []
+        // Solution 3: Queue the email notification instead of sending instantly to prevent spam
+        if (email) {
+          if (!consolidatedNotifications.has(user_id)) {
+            consolidatedNotifications.set(user_id, {
+              recipient: { name, email, phone: mobilenumber || undefined },
+              tasks: []
+            });
+          }
+          consolidatedNotifications.get(user_id)!.tasks.push({
+            title,
+            card_no,
+            scheduled_time: new Date(start_date).toLocaleString(),
+            task_id: newTaskId
           });
-        } catch (notifErr) {
-          logger.error(`⚠️ Failed to send notification dispatch to user ${name} (${email}):`, notifErr);
         }
       }
     }
 
     await client.query('COMMIT');
-    logger.info('🎉 Completed automated maintenance task generation and dispatch successfully.');
+    logger.info('🎉 Completed database updates for automated maintenance task generation.');
+
+    // Clear paused timestamp on successful catch-up scan
+    if (pausedAtStr) {
+      await redisService.del('system:task_generation:paused_at');
+    }
+
+    // Process queued email notifications (Solution 3: Anti-Spam / Batching)
+    for (const [userId, data] of consolidatedNotifications.entries()) {
+      const { recipient, tasks } = data;
+      
+      try {
+        if (tasks.length > 3) {
+          // Send a consolidated digest email
+          const taskDetailsList = tasks
+            .map((t, idx) => `${idx + 1}. Task: "${t.title}" (Asset: ${t.card_no}) - Scheduled: ${t.scheduled_time}`)
+            .join('<br>');
+
+          await notificationService.sendNotification({
+            recipient,
+            templateType: 'backlog_summary',
+            variables: {
+              task_count: tasks.length.toString(),
+              task_details_list: taskDetailsList
+            },
+            channels: ['email']
+          });
+          logger.info(`📧 Dispatched consolidated backlog summary email with ${tasks.length} tasks to ${recipient.email}`);
+        } else {
+          // Send individual emails for few tasks
+          for (const task of tasks) {
+            await notificationService.sendNotification({
+              recipient,
+              templateType: 'maintenance_reminder',
+              variables: {
+                task_name: task.title,
+                machine_name: task.card_no,
+                scheduled_time: task.scheduled_time,
+                scheduled_date: new Date(task.scheduled_time).toLocaleDateString(),
+                task_id: task.task_id
+              },
+              channels: ['email']
+            });
+          }
+          logger.info(`📧 Dispatched ${tasks.length} individual reminder emails to ${recipient.email}`);
+        }
+      } catch (dispatchErr) {
+        logger.error(`⚠️ Failed to dispatch consolidated/individual reminders to user ${recipient.name}:`, dispatchErr);
+      }
+    }
+
   } catch (error) {
     await client.query('ROLLBACK');
     logger.error('❌ Error occurred during maintenance schedule scan transaction:', error);

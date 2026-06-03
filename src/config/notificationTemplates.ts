@@ -10,7 +10,7 @@ export interface NotificationTemplateChannels {
   };
 }
 
-export type NotificationTemplateType = 'maintenance_reminder';
+export type NotificationTemplateType = 'maintenance_reminder' | 'backlog_summary';
 
 export const templates: Record<NotificationTemplateType, NotificationTemplateChannels> = {
   maintenance_reminder: {
@@ -54,6 +54,47 @@ export const templates: Record<NotificationTemplateType, NotificationTemplateCha
     push: {
       alert: "🛠 Reminder: '{{task_name}}' at {{scheduled_time}} today.",
       deepLink: "browns://tasks/{{task_id}}"
+    }
+  },
+  backlog_summary: {
+    sms: "Summary: You have been assigned {{task_count}} new PM tasks after the system maintenance window. Please check your mobile app.",
+    email: {
+      subject: "Assigned Work Summary: {{task_count}} New Maintenance Tasks",
+      body: `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            body { font-family: sans-serif; background-color: #f7fafc; padding: 20px; color: #2d3748; }
+            .container { background-color: white; border-radius: 8px; padding: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); max-width: 600px; margin: 0 auto; }
+            h2 { color: #e53e3e; border-bottom: 2px solid #edf2f7; padding-bottom: 10px; margin-top: 0; }
+            p { line-height: 1.6; font-size: 16px; }
+            .backlog-list { background-color: #edf2f7; padding: 15px; border-radius: 6px; font-family: monospace; font-size: 14px; margin: 20px 0; line-height: 1.8; }
+            .footer { font-size: 12px; color: #a0aec0; border-top: 1px solid #edf2f7; padding-top: 15px; margin-top: 25px; text-align: center; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h2>🛠 Consolidated Work Assignment</h2>
+            <p>Dear <strong>{{technician_name}}</strong>,</p>
+            <p>During the recent system maintenance window or pause period, <strong>{{task_count}} new maintenance tasks</strong> were assigned to you:</p>
+            <div class="backlog-list">
+              {{task_details_list}}
+            </div>
+            <p>Please open your mobile app to view full details and record your progress on these tasks. Thank you.</p>
+            <div class="footer">
+              Best,<br>
+              <strong>Hotel Maintenance Team</strong>
+            </div>
+          </div>
+        </body>
+        </html>
+      `
+    },
+    push: {
+      alert: "🛠 You have {{task_count}} new maintenance tasks assigned. Open the app to view details.",
+      deepLink: "browns://tasks"
     }
   }
 };
