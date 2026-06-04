@@ -445,3 +445,37 @@ export const toggleScanner = catchAsync(async (req: Request, res: Response) => {
   );
 });
 
+/**
+ * GET /api/scheduled-tasks/proximity-status
+ * Returns whether the proximity check is bypassed.
+ */
+export const getProximityStatus = catchAsync(async (req: Request, res: Response) => {
+  const isBypassed = await redisService.get('system:proximity_check:bypassed');
+  res.status(200).json(
+    new ApiResponse(200, { bypassed: isBypassed === 'true' }, 'Proximity status fetched successfully')
+  );
+});
+
+/**
+ * POST /api/scheduled-tasks/proximity-toggle
+ * Toggles whether proximity check is bypassed.
+ */
+export const toggleProximity = catchAsync(async (req: Request, res: Response) => {
+  const { bypassed } = req.body;
+
+  if (typeof bypassed !== 'boolean') {
+    throw new ApiError(400, 'bypassed field must be a boolean');
+  }
+
+  const ONE_YEAR_IN_SECONDS = 365 * 24 * 60 * 60;
+  await redisService.set('system:proximity_check:bypassed', bypassed ? 'true' : 'false', ONE_YEAR_IN_SECONDS);
+
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      { bypassed },
+      `Proximity verification has been successfully ${bypassed ? 'bypassed (disabled)' : 'enforced (enabled)'}`
+    )
+  );
+});
+
