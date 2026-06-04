@@ -348,8 +348,20 @@ const handleManualTaskNotificationDispatch = async (oldTask: any, updatedTask: a
   try {
     const statusChanged = oldTask.status !== updatedTask.status;
     const priorityChanged = oldTask.priority !== updatedTask.priority;
+    const assigneeChanged = oldTask.assigned_to !== updatedTask.assigned_to;
 
-    if (!statusChanged && !priorityChanged) {
+    if (assigneeChanged && updatedTask.assigned_to) {
+      createNotificationHelper(
+        updatedTask.assigned_to,
+        'task_assigned',
+        `New Task Assigned: ${updatedTask.title}`,
+        `You have been assigned a new manual task: "${updatedTask.title}".`,
+        updatedTask.manual_task_id,
+        'manual_task'
+      ).catch(err => console.error('Failed to dispatch assignee task notification:', err));
+    }
+
+    if (!statusChanged && !priorityChanged && !assigneeChanged) {
       return;
     }
 

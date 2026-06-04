@@ -1,5 +1,12 @@
 import express from 'express';
-import { generateQR, scanRedirect, updateRedirect, getTarget } from '../controllers/qr.controller.js';
+import {
+  generateQR,
+  scanRedirect,
+  updateRedirect,
+  getTarget,
+  getPublicMetadata,
+  createPublicReport
+} from '../controllers/qr.controller.js';
 
 const router = express.Router();
 
@@ -14,5 +21,11 @@ router.get('/scan/:machineId', scanRedirect);
 
 // Route to update redirect target for a machine
 router.post('/update', updateRedirect);
+
+// Public route to get non-sensitive asset metadata
+router.get('/public-metadata/:card_no', getPublicMetadata);
+
+// Public route to create manual tasks from scan without credentials
+router.post('/public-report', createPublicReport);
 
 export default router;

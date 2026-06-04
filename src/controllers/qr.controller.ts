@@ -1,10 +1,14 @@
 import { Request, Response, NextFunction } from 'express';
 import QRCode from 'qrcode';
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
 import { pool } from '../config/postgres.js';
 import logger from '../config/logger.js';
 import ApiError from '../utils/ApiError.js';
 import ApiResponse from '../utils/ApiResponse.js';
 import catchAsync from '../utils/catchAsync.js';
+import { createNotificationHelper } from './notification.controller.js';
 
 // Removed filesystem read/write helpers in favor of direct database queries
 
@@ -196,3 +200,139 @@ function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 }
+
+export const getPublicMetadata = catchAsync(async (req: Request, res: Response) => {
+  const { card_no } = req.params;
+
+  if (!card_no) {
+    throw new ApiError(400, 'Asset Card No is required');
+  }
+
+  const result = await pool.query(
+    `SELECT a.card_no, a.description, a.location, c.name as category_name, a.hotel_id, h.name as hotel_name
+     FROM assets a
+     LEFT JOIN categories c ON a.category_id = c.id
+     LEFT JOIN hotels h ON a.hotel_id = h.id
+     WHERE a.card_no = $1 AND a.status != 'retired'`,
+    [card_no]
+  );
+
+  if (result.rows.length === 0) {
+    throw new ApiError(404, 'Asset not found or is retired');
+  }
+
+  res.send(new ApiResponse(200, result.rows[0], 'Asset metadata retrieved successfully'));
+});
+
+const uploadsDir = path.resolve(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+const saveBase64Image = async (base64Image: string, req: Request): Promise<string> => {
+  let base64Data = base64Image;
+  if (base64Image.includes(';base64,')) {
+    base64Data = base64Image.split(';base64,').pop() || '';
+  }
+
+  const uniquePrefix = crypto.randomUUID();
+  const savedFilename = `${uniquePrefix}_public_report.jpg`;
+  const filePath = path.join(uploadsDir, savedFilename);
+
+  const buffer = Buffer.from(base64Data, 'base64');
+  await fs.promises.writeFile(filePath, buffer);
+
+  const externalBaseUrl = process.env.EXTERNAL_BASE_URL;
+  if (externalBaseUrl) {
+    return `${externalBaseUrl.replace(/\/$/, '')}/api/uploads/${savedFilename}`;
+  } else {
+    const host = req.headers['x-forwarded-host'] || req.get('host');
+    const proto = req.headers['x-forwarded-proto'] || req.protocol;
+    return `${proto}://${host}/api/uploads/${savedFilename}`;
+  }
+};
+
+export const createPublicReport = catchAsync(async (req: Request, res: Response) => {
+  const { card_no, description, priority = 'normal', reporter, image_base64 } = req.body;
+
+  if (!card_no || !description) {
+    throw new ApiError(400, 'Asset Card No and description are required');
+  }
+
+  // 1. Fetch asset details to get hotel_id and description
+  const assetResult = await pool.query(
+    'SELECT id, hotel_id, description FROM assets WHERE card_no = $1 AND status != \'retired\'',
+    [card_no]
+  );
+
+  if (assetResult.rows.length === 0) {
+    throw new ApiError(404, 'Asset not found or is retired');
+  }
+
+  const { hotel_id, description: assetDesc } = assetResult.rows[0];
+
+  // 2. Validate priority
+  if (!['normal', 'emergency'].includes(priority)) {
+    throw new ApiError(400, "Priority must be 'normal' or 'emergency'");
+  }
+
+  // 3. Handle base64 image saving if provided
+  let attachmentUrl: string | null = null;
+  if (image_base64) {
+    try {
+      attachmentUrl = await saveBase64Image(image_base64, req);
+    } catch (err) {
+      logger.error('Failed to save public report image:', err);
+    }
+  }
+
+  // 4. Create the manual task in DB (assigned_to = NULL, assigned_by = NULL)
+  const taskTitle = `[Public Report] - ${assetDesc}`;
+  const taskDesc = `Reporter: ${reporter || 'Anonymous Guest/Housekeeper'}\nDetails: ${description}`;
+
+  const query = `
+    INSERT INTO manual_task (
+      manual_task_id, hotel_id, title, description, assigned_to, assigned_by, checked_by,
+      card_no, status, priority, attachment_url, created_at, due_date, tech_remarks, eng_remarks
+    ) VALUES (
+      gen_random_uuid(), $1, $2, $3, NULL, NULL, NULL, $4, 'pending', $5, $6, CURRENT_DATE, NULL, NULL, NULL
+    ) RETURNING *
+  `;
+
+  const taskResult = await pool.query(query, [
+    hotel_id,
+    taskTitle,
+    taskDesc,
+    card_no,
+    priority,
+    attachmentUrl
+  ]);
+
+  const createdTask = taskResult.rows[0];
+
+  // 5. Notify managers and engineers at this hotel
+  try {
+    const staffQuery = `
+      SELECT id, role FROM users 
+      WHERE hotel_id = $1 AND role IN ('MANAGER', 'ENGINEER') AND is_active = true
+    `;
+    const staffRes = await pool.query(staffQuery, [hotel_id]);
+    for (const u of staffRes.rows) {
+      const typeLabel = priority === 'emergency' ? '🚨 EMERGENCY Public Report' : '📋 Public Report';
+      await createNotificationHelper(
+        u.id,
+        'system',
+        `${typeLabel}: ${card_no}`,
+        `A new issue was reported on asset ${card_no} (${assetDesc}). Details: "${description}"`,
+        createdTask.manual_task_id,
+        'manual_task'
+      );
+    }
+  } catch (err) {
+    logger.error('Failed to dispatch public report notification:', err);
+  }
+
+  res.status(201).json(
+    new ApiResponse(201, createdTask, 'Report submitted successfully')
+  );
+});
