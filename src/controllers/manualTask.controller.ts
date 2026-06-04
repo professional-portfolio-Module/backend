@@ -238,26 +238,19 @@ export const updateManualTask = catchAsync(async (req: Request, res: Response) =
 
   // --- Expired task accountability logic ---
   const isCurrentlyExpired = existing.rows[0].status === 'expired';
+  const isLateCompletion = isCurrentlyExpired || existing.rows[0].was_expired === true;
 
   if (isCurrentlyExpired) {
-    // Block escalation / priority changes on expired tasks
-    if (priority && priority !== existing.rows[0].priority) {
-      throw new ApiError(400, 'Cannot change priority on an expired task. You may only complete it as a late completion.');
-    }
-
     // Only allow transitioning to 'completed' or 'in-progress'
     if (status && status !== 'completed' && status !== 'in-progress') {
       throw new ApiError(400, `Expired tasks can only be completed as a late completion. Transition to '${status}' is not allowed.`);
     }
-
-    // Require remarks for late completions
-    if (status === 'completed' && !tech_remarks && !eng_remarks) {
-      throw new ApiError(400, 'Remarks are required when completing an expired task. Please explain why the task was completed late.');
-    }
   }
 
-  // Determine if this is a late completion (expired -> completed)
-  const isLateCompletion = isCurrentlyExpired && status === 'completed';
+  // Require remarks for late completions
+  if (isLateCompletion && status === 'completed' && !tech_remarks && !eng_remarks) {
+    throw new ApiError(400, 'Remarks are required when completing an expired task. Please explain why the task was completed late.');
+  }
 
   let query = 'UPDATE manual_task SET';
   const params: any[] = [];
