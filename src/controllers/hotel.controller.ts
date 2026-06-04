@@ -5,13 +5,13 @@ import ApiError from '../utils/ApiError.js';
 import catchAsync from '../utils/catchAsync.js';
 
 export const getHotels = catchAsync(async (req: Request, res: Response) => {
-  const result = await pool.query('SELECT id, name, country, city, created_at FROM hotels ORDER BY name ASC');
+  const result = await pool.query('SELECT id, name, country, city, latitude, longitude, created_at FROM hotels ORDER BY name ASC');
   res.status(200).json(new ApiResponse(200, result.rows, 'Hotels fetched successfully'));
 });
 
 export const getHotelById = catchAsync(async (req: Request, res: Response) => {
   const { id } = req.params;
-  const result = await pool.query('SELECT id, name, country, city, created_at FROM hotels WHERE id = $1', [id]);
+  const result = await pool.query('SELECT id, name, country, city, latitude, longitude, created_at FROM hotels WHERE id = $1', [id]);
   if (result.rows.length === 0) {
     throw new ApiError(404, 'Hotel not found');
   }
@@ -19,7 +19,7 @@ export const getHotelById = catchAsync(async (req: Request, res: Response) => {
 });
 
 export const createHotel = catchAsync(async (req: Request, res: Response) => {
-  const { name, country, city } = req.body;
+  const { name, country, city, latitude, longitude } = req.body;
 
   if (!name || name.trim() === '') {
     throw new ApiError(400, 'Hotel name is required');
@@ -36,8 +36,14 @@ export const createHotel = catchAsync(async (req: Request, res: Response) => {
   }
 
   const result = await pool.query(
-    'INSERT INTO hotels (name, country, city) VALUES ($1, $2, $3) RETURNING id, name, country, city, created_at',
-    [name.trim(), country ? country.trim() : null, city ? city.trim() : null]
+    'INSERT INTO hotels (name, country, city, latitude, longitude) VALUES ($1, $2, $3, $4, $5) RETURNING id, name, country, city, latitude, longitude, created_at',
+    [
+      name.trim(),
+      country ? country.trim() : null,
+      city ? city.trim() : null,
+      latitude !== undefined ? latitude : null,
+      longitude !== undefined ? longitude : null
+    ]
   );
 
   res.status(201).json(new ApiResponse(201, result.rows[0], 'Hotel created successfully'));
