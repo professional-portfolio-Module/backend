@@ -87,6 +87,53 @@ export const createNotification = catchAsync(async (req: Request, res: Response)
   res.status(201).json(new ApiResponse(201, notification, 'Notification created successfully'));
 });
 
+// Registry for Server-Sent Events (SSE) clients
+export const notificationSseClients = new Map<string, Response[]>();
+
+/**
+ * Establish a Server-Sent Events (SSE) stream for notification updates
+ * GET /api/notifications/stream?userId=...
+ */
+export const establishNotificationStream = (req: Request, res: Response) => {
+  const { userId } = req.query;
+  if (!userId) {
+    res.status(400).json({ success: false, message: 'userId is required' });
+    return;
+  }
+
+  // Set headers for EventStream connection
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  });
+
+  // Periodically send heartbeat comments to keep the socket connection open
+  const heartbeat = setInterval(() => {
+    res.write(': keepalive\n\n');
+  }, 30000);
+
+  const uidStr = userId as string;
+  const clients = notificationSseClients.get(uidStr) || [];
+  clients.push(res);
+  notificationSseClients.set(uidStr, clients);
+
+  // Clean up client registration on disconnect
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    const active = notificationSseClients.get(uidStr) || [];
+    const idx = active.indexOf(res);
+    if (idx > -1) {
+      active.splice(idx, 1);
+    }
+    if (active.length === 0) {
+      notificationSseClients.delete(uidStr);
+    } else {
+      notificationSseClients.set(uidStr, active);
+    }
+  });
+};
+
 /**
  * Helper to programmatically create in-app notifications from other services/controllers.
  */
@@ -103,19 +150,30 @@ export const createNotificationHelper = async (
       `INSERT INTO notifications (user_id, notification_type, title, content, entity_id, entity_type) 
        VALUES ($1, $2, $3, $4, $5, $6) 
        RETURNING 
-        id, 
-        user_id, 
-        notification_type, 
-        title, 
-        content, 
-        (read OR read_at IS NOT NULL) AS read, 
-        read_at, 
-        entity_id, 
-        entity_type, 
-        created_at`,
+         id, 
+         user_id, 
+         notification_type, 
+         title, 
+         content, 
+         (read OR read_at IS NOT NULL) AS read, 
+         read_at, 
+         entity_id, 
+         entity_type, 
+         created_at`,
       [userId, type, title, content, entityId || null, entityType || null]
     );
-    return result.rows[0];
+
+    const createdNotification = result.rows[0];
+
+    // Notify active SSE client in real-time
+    const clients = notificationSseClients.get(userId);
+    if (clients) {
+      clients.forEach(client => {
+        client.write(`data: ${JSON.stringify(createdNotification)}\n\n`);
+      });
+    }
+
+    return createdNotification;
   } catch (error) {
     console.error('Failed to create internal in-app notification:', error);
     return null;
