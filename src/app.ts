@@ -27,7 +27,9 @@ const app = express();
 // ---------------------
 // Global Security Headers (Helmet)
 // ---------------------
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
 
 // CORS
 app.use(
