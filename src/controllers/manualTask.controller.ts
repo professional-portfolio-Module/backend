@@ -88,6 +88,7 @@ export const createManualTask = catchAsync(async (req: Request, res: Response) =
     status = 'pending',
     priority = 'normal',
     attachment_url,
+    engineer_attachment_url,
     due_date,
     tech_remarks,
     eng_remarks
@@ -126,9 +127,9 @@ export const createManualTask = catchAsync(async (req: Request, res: Response) =
   const query = `
     INSERT INTO manual_task (
       manual_task_id, hotel_id, title, description, assigned_to, assigned_by, checked_by,
-      card_no, status, priority, attachment_url, created_at, due_date, tech_remarks, eng_remarks
+      card_no, status, priority, attachment_url, engineer_attachment_url, created_at, due_date, tech_remarks, eng_remarks
     ) VALUES (
-      uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_DATE, $11, $12, $13
+      uuid_generate_v4(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_DATE, $12, $13, $14
     ) RETURNING *
   `;
 
@@ -143,6 +144,7 @@ export const createManualTask = catchAsync(async (req: Request, res: Response) =
     status,
     priority,
     attachment_url || null,
+    engineer_attachment_url || null,
     due_date || null,
     tech_remarks || null,
     eng_remarks || null
@@ -205,6 +207,7 @@ export const updateManualTask = catchAsync(async (req: Request, res: Response) =
     status,
     priority,
     attachment_url,
+    engineer_attachment_url,
     due_date,
     completed_at,
     tech_remarks,
@@ -291,6 +294,10 @@ export const updateManualTask = catchAsync(async (req: Request, res: Response) =
   if (attachment_url !== undefined) {
     query += ` attachment_url = $${paramIndex++},`;
     params.push(attachment_url || null);
+  }
+  if (engineer_attachment_url !== undefined) {
+    query += ` engineer_attachment_url = $${paramIndex++},`;
+    params.push(engineer_attachment_url || null);
   }
   if (due_date !== undefined) {
     query += ` due_date = $${paramIndex++},`;

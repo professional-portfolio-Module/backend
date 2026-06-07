@@ -187,6 +187,7 @@ export const getScheduledTasks = catchAsync(async (req: Request, res: Response) 
       t.status,
       t.priority,
       t.attachment_url,
+      t.engineer_attachment_url,
       t.created_at,
       t.updated_at,
       t.completed_at,
@@ -287,6 +288,7 @@ export const getPendingTaskByAsset = catchAsync(async (req: Request, res: Respon
       t.status,
       t.priority,
       t.attachment_url,
+      t.engineer_attachment_url,
       t.created_at,
       t.updated_at,
       t.completed_at,
@@ -346,7 +348,7 @@ export const getPendingTaskByAsset = catchAsync(async (req: Request, res: Respon
  */
 export const updateScheduledTask = catchAsync(async (req: Request, res: Response) => {
   const { taskId } = req.params;
-  const { status, technician_remarks, engineer_remarks, attachment_url, done_by, checked_by, priority } = req.body;
+  const { status, technician_remarks, engineer_remarks, attachment_url, engineer_attachment_url, done_by, checked_by, priority } = req.body;
 
   // Verify task exists
   const checkRes = await pool.query('SELECT * FROM scheduled_tasks WHERE task_id = $1', [taskId]);
@@ -383,6 +385,7 @@ export const updateScheduledTask = catchAsync(async (req: Request, res: Response
       priority = COALESCE($7, priority),
       completed_at = CASE WHEN $1 IN ('completed', 'rejected') THEN CURRENT_TIMESTAMP ELSE completed_at END,
       was_expired = CASE WHEN $9 = true THEN true ELSE COALESCE(was_expired, false) END,
+      engineer_attachment_url = COALESCE($10, engineer_attachment_url),
       updated_at = CURRENT_TIMESTAMP
     WHERE task_id = $8
     RETURNING *
@@ -397,7 +400,8 @@ export const updateScheduledTask = catchAsync(async (req: Request, res: Response
     checked_by || null,
     priority || null,
     taskId,
-    isLateCompletion
+    isLateCompletion,
+    engineer_attachment_url || null
   ]);
 
   const updatedTask = updateRes.rows[0];
